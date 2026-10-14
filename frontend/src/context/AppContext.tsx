@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { Device, HostInfo, ActiveTransfer, TransferStatus, DeviceOS, DeviceType } from '../types';
 import { api } from '../api/client';
 import { wsClient, useWebSocket } from '../api/websocket';
-import { supabaseService, SupabaseSharedFile, SupabaseSharedText } from '../services/supabaseService';
+import { supabaseService, SupabaseSharedFile } from '../services/supabaseService';
 
 interface AppState {
   // Auth state
@@ -35,6 +35,7 @@ interface AppState {
   // Bluetooth style pairing
   isNameConfirmed: boolean;
   confirmDeviceName: (name: string) => void;
+  openNameSetup: () => void;
   pairedDevice: Device | null;
   pairingWithDevice: Device | null;
   pairingStatus: 'idle' | 'requesting' | 'connected';
@@ -151,9 +152,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [transferHistory, setTransferHistory] = useState<any[]>([]);
   const [theme, setTheme] = useState<'dark' | 'light'>(getStoredTheme);
 
-  // Bluetooth style pairing state
+  // Bluetooth style pairing state: ask for name every fresh session/tab
   const [isNameConfirmed, setIsNameConfirmed] = useState<boolean>(
-    () => localStorage.getItem('sharex_name_confirmed') === 'true'
+    () => sessionStorage.getItem('sharex_name_confirmed') === 'true'
   );
   const [pairedDevice, setPairedDevice] = useState<Device | null>(null);
   const [pairingWithDevice, setPairingWithDevice] = useState<Device | null>(null);
@@ -189,7 +190,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           localStorage.setItem('sharex_device_name', res.data.device?.name || 'Host PC');
           setIsConnected(true);
         }
-      }).catch(() => {});
+      }).catch(() => { });
     } else {
       // Automatic network initialization for Cloud/Vercel: Discover all online devices on same Wi-Fi
       const savedName = localStorage.getItem('sharex_device_name') || getDefaultDeviceName();
@@ -240,6 +241,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             setPairedDevice(null);
             setPairingStatus('idle');
           },
+          onTextReceived: (msg: { text: string; sender: Device }) => {
+            const incoming: ActiveTransfer = {
+              id: `text-${Date.now()}`,
+              transferId: `text-${Date.now()}`,
+              files: [],
+              fileInfos: [],
+              receiverId: savedId,
+              status: 'completed',
+              progress: 100,
+              speed: 0,
+              eta: 0,
+              direction: 'receive',
+              senderName: msg.sender.name,
+              transferType: 'text',
+              textContent: msg.text,
+            };
+            setActiveTransfers((prev) => [incoming, ...prev]);
+          },
           onFileReceived: (sharedFile: SupabaseSharedFile) => {
             console.log('Successfully received shared file:', sharedFile);
             try {
@@ -250,7 +269,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               document.body.appendChild(a);
               a.click();
               setTimeout(() => {
-                try { document.body.removeChild(a); } catch {}
+                try { document.body.removeChild(a); } catch { }
               }, 1000);
             } catch (err) {
               console.warn('Auto download error:', err);
@@ -282,33 +301,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               createdAt: Date.now(),
             }, ...prev]);
           },
-          onTextReceived: (msg: SupabaseSharedText) => {
-            console.log('Successfully received shared text message:', msg);
-            const incoming: ActiveTransfer = {
-              id: `text-${msg.id}`,
-              transferId: msg.id,
-              files: [],
-              fileInfos: [],
-              receiverId: savedId,
-              status: 'completed',
-              progress: 100,
-              speed: 0,
-              eta: 0,
-              direction: 'receive',
-              senderName: msg.senderName,
-              transferType: 'text',
-              textContent: msg.text,
-            };
-            setActiveTransfers((prev) => [incoming, ...prev]);
-            setTransferHistory((prev) => [{
-              id: msg.id,
-              files: [{ name: 'Text Message', size: msg.text.length }],
-              status: 'completed',
-              createdAt: Date.now(),
-              transferType: 'text',
-              textContent: msg.text,
-            }, ...prev]);
-          },
         });
       });
     }
@@ -322,7 +314,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (r.success && r.data?.pending) {
             setPendingDevices(r.data.pending);
           }
-        }).catch(() => {});
+        }).catch(() => { });
       };
       fetchPending();
       const interval = setInterval(fetchPending, 2500);
@@ -669,12 +661,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const submitPin = useCallback(async (pin: string) => {
     const name = deviceNameRef.current || localStorage.getItem('sharex_device_name') || 'My Device';
-    
+
     // First attempt Supabase room pairing
     try {
       const supaRes = await joinRoomWithPin(pin, name);
       if (supaRes.success) return supaRes;
-    } catch {}
+    } catch { }
 
     // Fallback to local API verifyPin if available
     if (pairDeviceId) {
@@ -691,7 +683,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             return { success: true, waitingApproval: true };
           }
         }
-      } catch {}
+      } catch { }
     }
 
     return { success: false, error: 'Could not connect. Please check PIN.' };
@@ -901,7 +893,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setDevices((prev) => prev.map((d) => (d.id === id ? { ...d, name } : d)));
     try {
       await api.renameDevice(id, name);
-    } catch {}
+    } catch { }
   }, [myDevice]);
 
   const toggleTheme = useCallback(() => {
@@ -935,7 +927,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (res.success && res.data?.devices) {
         setDevices(res.data.devices);
       }
-    } catch {}
+    } catch { }
   }, []);
 
   const approveDeviceRequest = useCallback(async (devId: string, approve: boolean) => {
@@ -958,17 +950,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [sessionToken, refreshDevices, pendingDevices, myDevice]);
 
+  const openNameSetup = useCallback(() => {
+    setIsNameConfirmed(false);
+  }, []);
+
   const confirmDeviceName = useCallback((name: string) => {
     const trimmed = name.trim() || getDefaultDeviceName();
     localStorage.setItem('sharex_device_name', trimmed);
-    localStorage.setItem('sharex_name_confirmed', 'true');
+    sessionStorage.setItem('sharex_name_confirmed', 'true');
     setIsNameConfirmed(true);
-    if (myDevice) {
-      const updated = { ...myDevice, name: trimmed };
+    const current = myDevRef.current;
+    if (current) {
+      const updated = { ...current, name: trimmed };
       setMyDevice(updated);
       supabaseService.updatePresence(updated);
     }
-  }, [myDevice]);
+  }, []);
 
   const connectToDevice = useCallback(async (targetDev: Device) => {
     if (!myDevice) return;
@@ -996,44 +993,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [myDevice, pairedDevice]);
 
   const sendText = useCallback(async (text: string, receiverId?: string) => {
-    if (!text.trim()) return;
-    const target = receiverId || pairedDevice?.id || 'all';
-    const sender = myDevice || ({
-      id: deviceId || 'sender',
-      name: localStorage.getItem('sharex_device_name') || 'Device',
-      type: getClientType(),
-      os: getClientOS(),
-      approved: true,
-      pairedAt: 0,
-      lastSeen: 0,
-    } as Device);
+    const current = myDevRef.current;
+    if (!current || !text.trim()) return;
 
-    const localTransfer: ActiveTransfer = {
-      id: `text-send-${Date.now()}`,
-      transferId: `trans-text-${Date.now()}`,
+    await supabaseService.shareText(current, text.trim(), receiverId);
+
+    const outTransfer: ActiveTransfer = {
+      id: `text-${Date.now()}`,
+      transferId: `text-${Date.now()}`,
       files: [],
       fileInfos: [],
-      receiverId: target,
+      receiverId: receiverId || 'all',
       status: 'completed',
       progress: 100,
       speed: 0,
       eta: 0,
       direction: 'send',
       transferType: 'text',
-      textContent: text,
-      senderName: sender.name,
+      textContent: text.trim(),
     };
-    setActiveTransfers((prev) => [localTransfer, ...prev]);
-    await supabaseService.shareText(text, sender, target);
-    setTransferHistory((prev) => [{
-      id: localTransfer.id,
-      files: [{ name: 'Text Message', size: text.length }],
-      status: 'completed',
-      createdAt: Date.now(),
-      transferType: 'text',
-      textContent: text,
-    }, ...prev]);
-  }, [myDevice, pairedDevice, deviceId]);
+    setActiveTransfers((prev) => [outTransfer, ...prev]);
+  }, []);
 
   const value: AppState = {
     isConnected,
@@ -1055,6 +1035,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     theme,
     isNameConfirmed,
     confirmDeviceName,
+    openNameSetup,
     pairedDevice,
     pairingWithDevice,
     pairingStatus,

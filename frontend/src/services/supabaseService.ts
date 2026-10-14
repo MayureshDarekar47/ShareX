@@ -19,14 +19,6 @@ export interface SupabaseSharedFile {
   timestamp: number;
 }
 
-export interface SupabaseSharedText {
-  id: string;
-  text: string;
-  senderName: string;
-  senderId: string;
-  timestamp: number;
-}
-
 export class SupabaseService {
   private channel: any = null;
   private networkChannel: any = null;
@@ -48,7 +40,7 @@ export class SupabaseService {
     callbacks: {
       onDevicesChange: (devices: Device[]) => void;
       onFileReceived: (file: SupabaseSharedFile) => void;
-      onTextReceived?: (textMsg: SupabaseSharedText) => void;
+      onTextReceived?: (data: { text: string; sender: Device }) => void;
       onConnectRequest?: (fromDevice: Device) => void;
       onConnectResponse?: (fromDevice: Device, accepted: boolean) => void;
       onDisconnect?: () => void;
@@ -57,7 +49,7 @@ export class SupabaseService {
     if (this.networkChannel) {
       try {
         supabase.removeChannel(this.networkChannel);
-      } catch {}
+      } catch { }
       this.networkChannel = null;
     }
 
@@ -101,6 +93,15 @@ export class SupabaseService {
           callbacks.onDisconnect?.();
         }
       })
+      .on('broadcast', { event: 'text_sent' }, (payload: any) => {
+        const data = payload?.payload || payload;
+        const target = data?.targetDeviceId;
+        if (!target || target === 'all' || target === 'host' || target === myDev.id) {
+          if (data?.text && data?.sender && data.sender.id !== myDev.id) {
+            callbacks.onTextReceived?.({ text: data.text, sender: data.sender });
+          }
+        }
+      })
       .on('broadcast', { event: 'file_sent' }, (payload: any) => {
         const data = payload?.payload || payload;
         const file: SupabaseSharedFile = data?.file || data;
@@ -109,17 +110,6 @@ export class SupabaseService {
         if (file && file.url) {
           if (!target || target === 'all' || target === 'host' || target === myDev.id) {
             callbacks.onFileReceived(file);
-          }
-        }
-      })
-      .on('broadcast', { event: 'text_sent' }, (payload: any) => {
-        const data = payload?.payload || payload;
-        const msg: SupabaseSharedText = data?.message || data;
-        const target = data?.targetDeviceId;
-
-        if (msg && msg.text) {
-          if (!target || target === 'all' || target === 'host' || target === myDev.id) {
-            callbacks.onTextReceived?.(msg);
           }
         }
       })
@@ -134,6 +124,34 @@ export class SupabaseService {
       });
 
     return this.networkChannel;
+  }
+
+  async shareText(fromDev: Device, text: string, targetDeviceId?: string) {
+    const payload = {
+      id: `text-${Date.now()}`,
+      text,
+      sender: fromDev,
+      targetDeviceId: targetDeviceId || 'all',
+      timestamp: Date.now(),
+    };
+
+    if (this.networkChannel) {
+      await this.networkChannel.send({
+        type: 'broadcast',
+        event: 'text_sent',
+        payload,
+      });
+    }
+
+    if (this.channel) {
+      await this.channel.send({
+        type: 'broadcast',
+        event: 'text_sent',
+        payload,
+      });
+    }
+
+    return { success: true };
   }
 
   async sendConnectRequest(fromDev: Device, toDeviceId: string) {
@@ -343,40 +361,6 @@ export class SupabaseService {
     } catch (e: any) {
       return { success: false, error: e.message || 'File share failed' };
     }
-  }
-
-  async shareText(
-    text: string,
-    senderDevice: Device,
-    targetDeviceId?: string
-  ): Promise<{ success: boolean; message?: SupabaseSharedText }> {
-    const messageInfo: SupabaseSharedText = {
-      id: Math.random().toString(36).substring(2, 9),
-      text,
-      senderName: senderDevice.name,
-      senderId: senderDevice.id,
-      timestamp: Date.now(),
-    };
-
-    const payload = { message: messageInfo, targetDeviceId: targetDeviceId || 'all' };
-
-    if (this.networkChannel) {
-      await this.networkChannel.send({
-        type: 'broadcast',
-        event: 'text_sent',
-        payload,
-      });
-    }
-
-    if (this.channel) {
-      await this.channel.send({
-        type: 'broadcast',
-        event: 'text_sent',
-        payload,
-      });
-    }
-
-    return { success: true, message: messageInfo };
   }
 
   leaveRoom() {

@@ -25,7 +25,7 @@ function SunIcon() {
 }
 
 export default function Navbar() {
-  const { isConnected, sessionToken, myDevice, theme, toggleTheme, isHost, hostPin } = useApp();
+  const { isConnected, sessionToken, myDevice, theme, toggleTheme, isHost, hostPin, openNameSetup } = useApp();
 
   const statusText = sessionToken
     ? isConnected
@@ -68,9 +68,16 @@ export default function Navbar() {
             </div>
           )}
 
-          <div className="nav-status" aria-live="polite">
+          <div
+            className="nav-status"
+            aria-live="polite"
+            onClick={openNameSetup}
+            style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+            title="Click to rename your device"
+          >
             <div className={`status-dot ${statusClass}`} aria-hidden="true" />
             <span>{statusText}</span>
+            <span style={{ fontSize: '0.75rem', opacity: 0.8 }} title="Change name">✏️</span>
           </div>
 
           <button

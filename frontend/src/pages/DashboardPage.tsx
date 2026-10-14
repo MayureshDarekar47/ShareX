@@ -919,7 +919,7 @@ function HistoryPanel() {
 export default function DashboardPage() {
   const {
     hostInfo, qrCode, qrUrl, myDevice, isHost, hostPin, pendingDevices, approveDeviceRequest,
-    incomingConnectRequest, respondToConnectRequest, pairedDevice, disconnectDevice
+    incomingConnectRequest, respondToConnectRequest, pairedDevice, disconnectDevice, openNameSetup
   } = useApp();
   const { addToast } = useContext(ToastContext);
   const [activeTab, setActiveTab] = useState<'send' | 'devices' | 'history'>('send');
@@ -935,6 +935,43 @@ export default function DashboardPage() {
 
   return (
     <div className="fade-in" style={{ paddingTop: '1.5rem' }}>
+      {/* Device Info & Quick Name Change Bar */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0.65rem 1rem',
+          background: 'var(--bg-card)',
+          borderRadius: '10px',
+          border: '1px solid var(--border-default)',
+          marginBottom: '1rem',
+          flexWrap: 'wrap',
+          gap: '0.5rem',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+          <div className="device-avatar" style={{ width: 36, height: 36, fontSize: '1.25rem' }}>
+            {getDeviceEmoji(myDevice?.os || 'windows')}
+          </div>
+          <div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Your Device
+            </div>
+            <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--text-primary)' }}>
+              {myDevice?.name || 'My Device'}
+            </div>
+          </div>
+        </div>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={openNameSetup}
+          id="change-device-name-btn"
+          style={{ border: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+        >
+          <span>✏️</span> Change Name
+        </button>
+      </div>
       {/* Bluetooth style incoming connection request modal/banner */}
       {incomingConnectRequest && (
         <div
