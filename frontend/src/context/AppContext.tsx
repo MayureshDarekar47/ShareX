@@ -32,6 +32,17 @@ interface AppState {
   // Theme
   theme: 'dark' | 'light';
 
+  // Bluetooth style pairing
+  isNameConfirmed: boolean;
+  confirmDeviceName: (name: string) => void;
+  pairedDevice: Device | null;
+  pairingWithDevice: Device | null;
+  pairingStatus: 'idle' | 'requesting' | 'connected';
+  incomingConnectRequest: Device | null;
+  connectToDevice: (targetDev: Device) => Promise<void>;
+  respondToConnectRequest: (accept: boolean) => Promise<void>;
+  disconnectDevice: () => Promise<void>;
+
   // Actions
   createRoom: (name: string) => Promise<string>;
   joinRoomWithPin: (pin: string, name: string) => Promise<{ success: boolean; error?: string; waitingApproval?: boolean }>;
@@ -139,8 +150,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [transferHistory, setTransferHistory] = useState<any[]>([]);
   const [theme, setTheme] = useState<'dark' | 'light'>(getStoredTheme);
 
+  // Bluetooth style pairing state
+  const [isNameConfirmed, setIsNameConfirmed] = useState<boolean>(
+    () => localStorage.getItem('sharex_name_confirmed') === 'true'
+  );
+  const [pairedDevice, setPairedDevice] = useState<Device | null>(null);
+  const [pairingWithDevice, setPairingWithDevice] = useState<Device | null>(null);
+  const [pairingStatus, setPairingStatus] = useState<'idle' | 'requesting' | 'connected'>('idle');
+  const [incomingConnectRequest, setIncomingConnectRequest] = useState<Device | null>(null);
+
   const deviceNameRef = useRef<string>(localStorage.getItem('sharex_device_name') || '');
+  const myDevRef = useRef<Device | null>(null);
   const pairPollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Keep myDevRef updated
+  useEffect(() => {
+    myDevRef.current = myDevice;
+  }, [myDevice]);
 
   // Auto-claim host session on localhost OR auto-join Wi-Fi network lobby on cloud/Vercel
   useEffect(() => {
@@ -193,6 +219,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           onDevicesChange: (onlineList) => {
             const others = onlineList.filter((d) => d.id !== savedId);
             setDevices(others);
+          },
+          onConnectRequest: (fromDev: Device) => {
+            console.log('Incoming connection request from:', fromDev);
+            setIncomingConnectRequest(fromDev);
+          },
+          onConnectResponse: (fromDev: Device, accepted: boolean) => {
+            console.log('Connection response from:', fromDev, 'accepted:', accepted);
+            if (accepted) {
+              setPairedDevice(fromDev);
+              setPairingStatus('connected');
+              setPairingWithDevice(null);
+            } else {
+              setPairingStatus('idle');
+              setPairingWithDevice(null);
+            }
+          },
+          onDisconnect: () => {
+            setPairedDevice(null);
+            setPairingStatus('idle');
           },
           onFileReceived: (sharedFile: SupabaseSharedFile) => {
             console.log('Successfully received shared file:', sharedFile);
@@ -885,6 +930,43 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [sessionToken, refreshDevices, pendingDevices, myDevice]);
 
+  const confirmDeviceName = useCallback((name: string) => {
+    const trimmed = name.trim() || getDefaultDeviceName();
+    localStorage.setItem('sharex_device_name', trimmed);
+    localStorage.setItem('sharex_name_confirmed', 'true');
+    setIsNameConfirmed(true);
+    if (myDevice) {
+      const updated = { ...myDevice, name: trimmed };
+      setMyDevice(updated);
+      supabaseService.updatePresence(updated);
+    }
+  }, [myDevice]);
+
+  const connectToDevice = useCallback(async (targetDev: Device) => {
+    if (!myDevice) return;
+    setPairingWithDevice(targetDev);
+    setPairingStatus('requesting');
+    await supabaseService.sendConnectRequest(myDevice, targetDev.id);
+  }, [myDevice]);
+
+  const respondToConnectRequest = useCallback(async (accept: boolean) => {
+    const current = myDevRef.current;
+    if (!current || !incomingConnectRequest) return;
+    await supabaseService.respondConnectRequest(current, incomingConnectRequest.id, accept);
+    if (accept) {
+      setPairedDevice(incomingConnectRequest);
+      setPairingStatus('connected');
+    }
+    setIncomingConnectRequest(null);
+  }, [incomingConnectRequest]);
+
+  const disconnectDevice = useCallback(async () => {
+    if (!myDevice || !pairedDevice) return;
+    await supabaseService.sendDisconnect(myDevice.id, pairedDevice.id);
+    setPairedDevice(null);
+    setPairingStatus('idle');
+  }, [myDevice, pairedDevice]);
+
   const value: AppState = {
     isConnected,
     deviceId,
@@ -903,6 +985,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     activeTransfers,
     transferHistory,
     theme,
+    isNameConfirmed,
+    confirmDeviceName,
+    pairedDevice,
+    pairingWithDevice,
+    pairingStatus,
+    incomingConnectRequest,
+    connectToDevice,
+    respondToConnectRequest,
+    disconnectDevice,
     createRoom,
     joinRoomWithPin,
     startPairing,

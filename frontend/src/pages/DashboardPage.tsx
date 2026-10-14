@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useContext } from 'react';
+import { useState, useRef, useCallback, useContext, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { ToastContext } from '../main';
 import { ActiveTransfer, Device } from '../types';
@@ -192,13 +192,19 @@ function TransferCard({ transfer }: { transfer: ActiveTransfer }) {
 
 // ── Send Files Panel ──
 function SendPanel() {
-  const { devices, myDevice, sendFiles } = useApp();
+  const { devices, myDevice, sendFiles, pairedDevice } = useApp();
   const { addToast } = useContext(ToastContext);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [selectedReceiver, setSelectedReceiver] = useState<string>('host');
+  const [selectedReceiver, setSelectedReceiver] = useState<string>(() => pairedDevice?.id || 'all');
   const [dragOver, setDragOver] = useState(false);
   const [sending, setSending] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (pairedDevice) {
+      setSelectedReceiver(pairedDevice.id);
+    }
+  }, [pairedDevice]);
 
   const totalSize = selectedFiles.reduce((s, f) => s + f.size, 0);
 
@@ -390,7 +396,10 @@ function TransfersPanel() {
 
 // ── Devices Panel ──
 function DevicesPanel() {
-  const { devices, myDevice, renameDevice, refreshDevices, sendFiles } = useApp();
+  const {
+    devices, myDevice, renameDevice, refreshDevices, sendFiles,
+    connectToDevice, pairingWithDevice, pairedDevice, disconnectDevice
+  } = useApp();
   const { addToast } = useContext(ToastContext);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
@@ -513,34 +522,85 @@ function DevicesPanel() {
               </p>
             </div>
           ) : (
-            otherDevices.map((d) => (
-              <div key={d.id} className="device-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  <div className="device-avatar">{getDeviceEmoji(d.os)}</div>
-                  <div className="device-info">
-                    <div className="device-name" style={{ fontWeight: 600 }}>{d.name}</div>
-                    <div className="device-meta" style={{ fontSize: '0.8rem', color: 'var(--text-muted, #94a3b8)' }}>
-                      {d.os} · {d.type}
+            otherDevices.map((d) => {
+              const isPaired = pairedDevice?.id === d.id;
+              const isRequesting = pairingWithDevice?.id === d.id;
+
+              return (
+                <div
+                  key={d.id}
+                  className="device-card"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    border: isPaired ? '1px solid #10b981' : undefined,
+                    background: isPaired ? 'rgba(16, 185, 129, 0.06)' : undefined,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <div className="device-avatar">{getDeviceEmoji(d.os)}</div>
+                    <div className="device-info">
+                      <div className="device-name" style={{ fontWeight: 600 }}>{d.name}</div>
+                      <div className="device-meta" style={{ fontSize: '0.8rem', color: 'var(--text-muted, #94a3b8)' }}>
+                        {d.os} · {d.type} {isPaired ? '· ✓ Paired' : ''}
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', color: '#10b981' }}>
-                    <div className="status-dot connected" style={{ width: 8, height: 8 }} />
-                    <span>Online</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    {isPaired ? (
+                      <>
+                        <span style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: 600 }}>
+                          ✓ Connected
+                        </span>
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={() => handleQuickSend(d.id)}
+                          id={`send-to-${d.id}`}
+                          style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                        >
+                          <span>📤</span> Send File
+                        </button>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => disconnectDevice()}
+                          style={{ color: '#ef4444', fontSize: '0.8rem' }}
+                        >
+                          Disconnect
+                        </button>
+                      </>
+                    ) : isRequesting ? (
+                      <span className="text-muted fs-xs" style={{ fontStyle: 'italic', padding: '0.4rem 0.6rem' }}>
+                        ⏳ Requesting...
+                      </span>
+                    ) : (
+                      <>
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={() => {
+                            connectToDevice(d);
+                            addToast('info', `Sent connection request to ${d.name}...`);
+                          }}
+                          id={`connect-${d.id}`}
+                          style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                        >
+                          <span>🔗</span> Connect
+                        </button>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => handleQuickSend(d.id)}
+                          id={`send-to-${d.id}`}
+                          title="Direct file transfer"
+                        >
+                          📤 Send
+                        </button>
+                      </>
+                    )}
                   </div>
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={() => handleQuickSend(d.id)}
-                    id={`send-to-${d.id}`}
-                    style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
-                  >
-                    <span>📤</span> Send File
-                  </button>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>
@@ -609,9 +669,11 @@ function HistoryPanel() {
   );
 }
 
-// ── Dashboard page ──
 export default function DashboardPage() {
-  const { hostInfo, qrCode, qrUrl, myDevice, isHost, hostPin, pendingDevices, approveDeviceRequest } = useApp();
+  const {
+    hostInfo, qrCode, qrUrl, myDevice, isHost, hostPin, pendingDevices, approveDeviceRequest,
+    incomingConnectRequest, respondToConnectRequest, pairedDevice, disconnectDevice
+  } = useApp();
   const { addToast } = useContext(ToastContext);
   const [activeTab, setActiveTab] = useState<'send' | 'devices' | 'history'>('send');
   const [copied, setCopied] = useState(false);
@@ -625,7 +687,96 @@ export default function DashboardPage() {
 
   return (
     <div className="fade-in" style={{ paddingTop: '1.5rem' }}>
-      {/* Pending approvals alert banner for host */}
+      {/* Bluetooth style incoming connection request modal/banner */}
+      {incomingConnectRequest && (
+        <div
+          className="card glow-card mb-2"
+          style={{
+            border: '2px solid var(--accent, #6366f1)',
+            background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(139, 92, 246, 0.15) 100%)',
+            boxShadow: '0 8px 30px rgba(99, 102, 241, 0.3)',
+            animation: 'pulse 2s infinite'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+              <div className="device-avatar" style={{ fontSize: '2rem' }}>{getDeviceEmoji(incomingConnectRequest.os)}</div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '1.15rem', color: '#fff' }}>
+                  📱 Connection Request from "{incomingConnectRequest.name}"
+                </div>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted, #94a3b8)' }}>
+                  This device wants to connect and share files with you.
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '0.6rem' }}>
+              <button
+                id="accept-connection-btn"
+                className="btn btn-primary"
+                onClick={() => {
+                  respondToConnectRequest(true);
+                  addToast('success', `Connected with ${incomingConnectRequest.name}!`);
+                }}
+                style={{ padding: '0.55rem 1.25rem', fontWeight: 600 }}
+              >
+                ✓ Accept
+              </button>
+              <button
+                id="decline-connection-btn"
+                className="btn btn-danger"
+                onClick={() => {
+                  respondToConnectRequest(false);
+                  addToast('info', 'Connection request declined');
+                }}
+                style={{ padding: '0.55rem 1.25rem' }}
+              >
+                ✕ Decline
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Paired Device Status Banner */}
+      {pairedDevice && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0.75rem 1.25rem',
+            background: 'rgba(16, 185, 129, 0.12)',
+            border: '1px solid #10b981',
+            borderRadius: '10px',
+            marginBottom: '1.25rem'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+            <div className="status-dot connected" style={{ width: 10, height: 10 }} />
+            <div>
+              <span style={{ color: '#10b981', fontWeight: 600 }}>Connected to: </span>
+              <strong style={{ fontSize: '1.05rem' }}>{pairedDevice.name}</strong>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted, #94a3b8)', marginLeft: '0.5rem' }}>
+                ({pairedDevice.os} · {pairedDevice.type})
+              </span>
+            </div>
+          </div>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              disconnectDevice();
+              addToast('info', 'Disconnected from device');
+            }}
+            style={{ color: '#ef4444' }}
+            id="disconnect-device-btn"
+          >
+            Disconnect
+          </button>
+        </div>
+      )}
+
+      {/* Pending approvals alert banner for local server host */}
       {pendingDevices && pendingDevices.length > 0 && (
         <div className="card glow-card mb-2" style={{ border: '2px solid var(--accent, #6366f1)' }}>
           <div className="card-header" style={{ background: 'rgba(99, 102, 241, 0.12)' }}>

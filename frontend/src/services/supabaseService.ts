@@ -31,8 +31,6 @@ export class SupabaseService {
 
   // ── Network Peer Discovery ──
   async getNetworkId(): Promise<string> {
-    // We use a shared mesh channel so devices always connect reliably
-    // even if one is on IPv4 and another on IPv6
     return 'sharex_mesh_room';
   }
 
@@ -42,6 +40,9 @@ export class SupabaseService {
     callbacks: {
       onDevicesChange: (devices: Device[]) => void;
       onFileReceived: (file: SupabaseSharedFile) => void;
+      onConnectRequest?: (fromDevice: Device) => void;
+      onConnectResponse?: (fromDevice: Device, accepted: boolean) => void;
+      onDisconnect?: () => void;
     }
   ) {
     if (this.networkChannel) {
@@ -73,14 +74,30 @@ export class SupabaseService {
         }
         callbacks.onDevicesChange(onlineList);
       })
+      .on('broadcast', { event: 'connect_request' }, (payload: any) => {
+        const data = payload?.payload || payload;
+        if (data?.toDeviceId === myDev.id && data?.fromDevice) {
+          callbacks.onConnectRequest?.(data.fromDevice);
+        }
+      })
+      .on('broadcast', { event: 'connect_response' }, (payload: any) => {
+        const data = payload?.payload || payload;
+        if (data?.toDeviceId === myDev.id && data?.fromDevice) {
+          callbacks.onConnectResponse?.(data.fromDevice, data.accepted);
+        }
+      })
+      .on('broadcast', { event: 'disconnect' }, (payload: any) => {
+        const data = payload?.payload || payload;
+        if (data?.toDeviceId === myDev.id) {
+          callbacks.onDisconnect?.();
+        }
+      })
       .on('broadcast', { event: 'file_sent' }, (payload: any) => {
-        console.log('[Supabase Realtime] Incoming file_sent broadcast:', payload);
         const data = payload?.payload || payload;
         const file: SupabaseSharedFile = data?.file || data;
         const target = data?.targetDeviceId;
 
         if (file && file.url) {
-          // Accept if intended for everyone, host, or this specific device
           if (!target || target === 'all' || target === 'host' || target === myDev.id) {
             callbacks.onFileReceived(file);
           }
@@ -97,6 +114,36 @@ export class SupabaseService {
       });
 
     return this.networkChannel;
+  }
+
+  async sendConnectRequest(fromDev: Device, toDeviceId: string) {
+    if (this.networkChannel) {
+      await this.networkChannel.send({
+        type: 'broadcast',
+        event: 'connect_request',
+        payload: { fromDevice: fromDev, toDeviceId },
+      });
+    }
+  }
+
+  async respondConnectRequest(fromDev: Device, toDeviceId: string, accepted: boolean) {
+    if (this.networkChannel) {
+      await this.networkChannel.send({
+        type: 'broadcast',
+        event: 'connect_response',
+        payload: { fromDevice: fromDev, toDeviceId, accepted },
+      });
+    }
+  }
+
+  async sendDisconnect(fromDevId: string, toDeviceId: string) {
+    if (this.networkChannel) {
+      await this.networkChannel.send({
+        type: 'broadcast',
+        event: 'disconnect',
+        payload: { fromDeviceId: fromDevId, toDeviceId },
+      });
+    }
   }
 
   async updatePresence(updatedDev: Device) {
