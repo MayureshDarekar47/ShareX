@@ -25,7 +25,7 @@ function SunIcon() {
 }
 
 export default function Navbar() {
-  const { isConnected, sessionToken, myDevice, theme, toggleTheme } = useApp();
+  const { isConnected, sessionToken, myDevice, theme, toggleTheme, isHost, hostPin } = useApp();
 
   const statusText = sessionToken
     ? isConnected
@@ -46,6 +46,28 @@ export default function Navbar() {
         </a>
 
         <div className="navbar-actions">
+          {isHost && hostPin && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                background: 'rgba(99, 102, 241, 0.15)',
+                border: '1px solid var(--accent, #6366f1)',
+                padding: '0.25rem 0.6rem',
+                borderRadius: '6px',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                color: 'var(--primary, #818cf8)',
+                letterSpacing: '0.05em'
+              }}
+              title="Share this PIN with other devices"
+            >
+              <span>🔑 PIN:</span>
+              <span style={{ fontSize: '1rem', letterSpacing: '0.1em' }}>{hostPin}</span>
+            </div>
+          )}
+
           <div className="nav-status" aria-live="polite">
             <div className={`status-dot ${statusClass}`} aria-hidden="true" />
             <span>{statusText}</span>
