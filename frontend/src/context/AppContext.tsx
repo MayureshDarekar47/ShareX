@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { Device, HostInfo, ActiveTransfer, TransferStatus } from '../types';
+import { Device, HostInfo, ActiveTransfer, TransferStatus, DeviceOS } from '../types';
 import { api } from '../api/client';
 import { wsClient, useWebSocket } from '../api/websocket';
+import { supabaseService, SupabaseSharedFile } from '../services/supabaseService';
 
 interface AppState {
   // Auth state
@@ -32,6 +33,8 @@ interface AppState {
   theme: 'dark' | 'light';
 
   // Actions
+  createRoom: (name: string) => Promise<string>;
+  joinRoomWithPin: (pin: string, name: string) => Promise<{ success: boolean; error?: string; waitingApproval?: boolean }>;
   startPairing: (name: string) => Promise<void>;
   submitPin: (pin: string) => Promise<{ success: boolean; error?: string; waitingApproval?: boolean }>;
   pollPairStatus: () => Promise<boolean>;
@@ -78,6 +81,16 @@ function computeChecksum(file: File): Promise<string> {
     reader.onerror = () => resolve('');
     reader.readAsArrayBuffer(file);
   });
+}
+
+function getClientOS(): DeviceOS {
+  const ua = navigator.userAgent;
+  if (/iPhone|iPad|iPod/i.test(ua)) return 'ios';
+  if (/Android/i.test(ua)) return 'android';
+  if (/Windows/i.test(ua)) return 'windows';
+  if (/Macintosh|Mac OS X/i.test(ua)) return 'macos';
+  if (/Linux/i.test(ua)) return 'linux';
+  return 'unknown';
 }
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
@@ -326,48 +339,191 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     );
   });
 
+  const createRoom = useCallback(async (name: string): Promise<string> => {
+    const pin = supabaseService.generatePin();
+    setHostPin(pin);
+    setIsHost(true);
+    localStorage.setItem('sharex_host_pin', pin);
+    localStorage.setItem('sharex_is_host', 'true');
+
+    const hostDev: Device = {
+      id: `host-${pin}`,
+      name: name || 'Host PC',
+      type: 'desktop',
+      os: getClientOS(),
+      pairedAt: Date.now(),
+      lastSeen: Date.now(),
+      approved: true,
+    };
+    setMyDevice(hostDev);
+    setDeviceId(hostDev.id);
+    const token = `supabase-${pin}`;
+    setSessionToken(token);
+    localStorage.setItem('sharex_token', token);
+
+    supabaseService.createHostRoom(pin, hostDev, {
+      onPairRequest: (req) => {
+        const clientDev: Device = {
+          id: req.deviceId,
+          name: req.name,
+          type: (req.type as any) || 'mobile',
+          os: (req.os as any) || 'unknown',
+          pairedAt: Date.now(),
+          lastSeen: Date.now(),
+          approved: false,
+        };
+        setPendingDevices((prev) => {
+          if (prev.some((d) => d.id === clientDev.id)) return prev;
+          return [...prev, clientDev];
+        });
+      },
+      onFileReceived: (sharedFile: SupabaseSharedFile) => {
+        const incoming: ActiveTransfer = {
+          id: `supabase-${sharedFile.id}`,
+          transferId: sharedFile.id,
+          files: [],
+          fileInfos: [{
+            name: sharedFile.name,
+            size: sharedFile.size,
+            mimeType: sharedFile.type,
+          }],
+          receiverId: hostDev.id,
+          status: 'completed',
+          progress: 100,
+          speed: 0,
+          eta: 0,
+          downloadUrls: [sharedFile.url],
+          direction: 'receive',
+          senderName: sharedFile.senderName,
+        };
+        setActiveTransfers((prev) => [incoming, ...prev]);
+        setTransferHistory((prev) => [{
+          id: sharedFile.id,
+          files: [{ name: sharedFile.name, size: sharedFile.size }],
+          status: 'completed',
+          createdAt: Date.now(),
+        }, ...prev]);
+      },
+    });
+
+    setIsConnected(true);
+    setIsPairingMode(false);
+    return pin;
+  }, []);
+
+  const joinRoomWithPin = useCallback(async (pin: string, name: string) => {
+    const clientDev: Device = {
+      id: `client-${Math.random().toString(36).substring(2, 8)}`,
+      name: name || 'My Device',
+      type: 'mobile',
+      os: getClientOS(),
+      pairedAt: Date.now(),
+      lastSeen: Date.now(),
+      approved: false,
+    };
+    setMyDevice(clientDev);
+    setDeviceId(clientDev.id);
+    setPairDeviceId(clientDev.id);
+    setPairingStep('waiting');
+
+    supabaseService.joinRoomWithPin(pin, clientDev, {
+      onApproved: (hostInfo) => {
+        const hostDev: Device = {
+          id: `host-${pin}`,
+          name: hostInfo.name || 'Host',
+          type: 'desktop',
+          os: 'unknown',
+          pairedAt: Date.now(),
+          lastSeen: Date.now(),
+          approved: true,
+        };
+        setDevices([hostDev]);
+        const token = `supabase-${pin}`;
+        completeAuth(clientDev.id, token, clientDev);
+      },
+      onRejected: () => {
+        setPairingStep('init');
+        setIsConnected(false);
+      },
+      onFileReceived: (sharedFile: SupabaseSharedFile) => {
+        const incoming: ActiveTransfer = {
+          id: `supabase-${sharedFile.id}`,
+          transferId: sharedFile.id,
+          files: [],
+          fileInfos: [{
+            name: sharedFile.name,
+            size: sharedFile.size,
+            mimeType: sharedFile.type,
+          }],
+          receiverId: clientDev.id,
+          status: 'completed',
+          progress: 100,
+          speed: 0,
+          eta: 0,
+          downloadUrls: [sharedFile.url],
+          direction: 'receive',
+          senderName: sharedFile.senderName,
+        };
+        setActiveTransfers((prev) => [incoming, ...prev]);
+        setTransferHistory((prev) => [{
+          id: sharedFile.id,
+          files: [{ name: sharedFile.name, size: sharedFile.size }],
+          status: 'completed',
+          createdAt: Date.now(),
+        }, ...prev]);
+      },
+    });
+
+    return { success: true, waitingApproval: true };
+  }, []);
+
   const startPairing = useCallback(async (name: string) => {
     deviceNameRef.current = name;
     localStorage.setItem('sharex_device_name', name);
     setIsPairingMode(true);
-    setPairingStep('init');
+    setPairingStep('pin');
 
-    const res = await api.initPair(name);
-    if (!res.success || !res.data) throw new Error(res.error || 'Pairing init failed');
-
-    const { deviceId: did, sessionToken: token, requiresPin } = res.data;
-    setPairDeviceId(did);
-    localStorage.setItem('sharex_device_id', did);
-
-    if (!requiresPin) {
-      // Auto-pass PIN step
-      const pinRes = await api.verifyPin(did, '000000');
-      if (pinRes.success && pinRes.data?.sessionToken) {
-        completeAuth(did, pinRes.data.sessionToken, pinRes.data.device);
+    try {
+      const res = await api.initPair(name);
+      if (res.success && res.data) {
+        const { deviceId: did } = res.data;
+        setPairDeviceId(did);
+        localStorage.setItem('sharex_device_id', did);
       }
-    } else {
-      setPairingStep('pin');
+    } catch {
+      // Local server not running, Supabase PIN pairing will be used
     }
   }, []);
 
   const submitPin = useCallback(async (pin: string) => {
-    if (!pairDeviceId) return { success: false, error: 'No device ID' };
-    const res = await api.verifyPin(pairDeviceId, pin);
-    if (!res.success) return { success: false, error: res.error };
+    const name = deviceNameRef.current || localStorage.getItem('sharex_device_name') || 'My Device';
+    
+    // First attempt Supabase room pairing
+    try {
+      const supaRes = await joinRoomWithPin(pin, name);
+      if (supaRes.success) return supaRes;
+    } catch {}
 
-    if (res.data?.sessionToken) {
-      completeAuth(pairDeviceId, res.data.sessionToken, res.data.device);
-      return { success: true };
+    // Fallback to local API verifyPin if available
+    if (pairDeviceId) {
+      try {
+        const res = await api.verifyPin(pairDeviceId, pin);
+        if (res.success) {
+          if (res.data?.sessionToken) {
+            completeAuth(pairDeviceId, res.data.sessionToken, res.data.device);
+            return { success: true };
+          }
+          if (res.data?.waitingApproval) {
+            setPairingStep('waiting');
+            startPairPolling(pairDeviceId);
+            return { success: true, waitingApproval: true };
+          }
+        }
+      } catch {}
     }
 
-    if (res.data?.waitingApproval) {
-      setPairingStep('waiting');
-      startPairPolling(pairDeviceId);
-      return { success: true, waitingApproval: true };
-    }
-
-    return { success: false, error: 'Unexpected response' };
-  }, [pairDeviceId]);
+    return { success: false, error: 'Could not connect. Please check PIN.' };
+  }, [pairDeviceId, joinRoomWithPin]);
 
   function startPairPolling(did: string) {
     if (pairPollTimer.current) clearInterval(pairPollTimer.current);
@@ -403,6 +559,43 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }
 
   const sendFiles = useCallback(async (receiverId: string, files: File[]) => {
+    // Check if Supabase session is active
+    if (sessionToken && sessionToken.startsWith('supabase-')) {
+      for (const file of files) {
+        const localTransfer: ActiveTransfer = {
+          id: `send-${Date.now()}`,
+          transferId: `trans-${Date.now()}`,
+          files: [file],
+          fileInfos: [{ name: file.name, size: file.size, mimeType: file.type }],
+          receiverId,
+          status: 'uploading',
+          progress: 30,
+          speed: 0,
+          eta: 0,
+          direction: 'send',
+        };
+        setActiveTransfers((prev) => [localTransfer, ...prev]);
+
+        const res = await supabaseService.shareFile(file, myDevice || ({ id: 'sender', name: 'Device', type: 'mobile', os: 'unknown', approved: true, pairedAt: 0, lastSeen: 0 } as Device));
+        if (res.success && res.fileInfo) {
+          setActiveTransfers((prev) =>
+            prev.map((t) => t.id === localTransfer.id ? { ...t, status: 'completed', progress: 100, downloadUrls: [res.fileInfo!.url] } : t)
+          );
+          setTransferHistory((prev) => [{
+            id: localTransfer.id,
+            files: [{ name: file.name, size: file.size }],
+            status: 'completed',
+            createdAt: Date.now(),
+          }, ...prev]);
+        } else {
+          setActiveTransfers((prev) =>
+            prev.map((t) => t.id === localTransfer.id ? { ...t, status: 'failed', error: res.error || 'Upload failed' } : t)
+          );
+        }
+      }
+      return;
+    }
+
     const fileInfos = files.map((f) => ({
       name: f.name,
       size: f.size,
@@ -431,15 +624,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     setActiveTransfers((prev) => [...prev, localTransfer]);
 
-    // For host transfers, upload immediately
-    // For device-to-device, wait for transfer_approved WS event
     if (receiverId === 'host') {
       await uploadAllFiles(transferId, files, fileInfos);
     } else {
-      // Wait for approval via WebSocket
       waitForApprovalAndUpload(transferId, files, fileInfos);
     }
-  }, []);
+  }, [sessionToken, myDevice]);
 
   async function uploadAllFiles(transferId: string, files: File[], fileInfos: any[]) {
     const totalSize = fileInfos.reduce((s, f) => s + f.size, 0);
@@ -516,26 +706,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [activeTransfers, sendFiles]);
 
   const downloadFile = useCallback((transferId: string, fileIndex: number, filename: string) => {
-    const url = api.downloadUrl(transferId, fileIndex);
+    const t = activeTransfers.find((at) => at.transferId === transferId || at.id === transferId);
+    const directUrl = t?.downloadUrls?.[fileIndex] || t?.downloadUrls?.[0];
+    const url = directUrl || api.downloadUrl(transferId, fileIndex);
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;
+    a.target = '_blank';
+    document.body.appendChild(a);
     a.click();
-  }, []);
+    document.body.removeChild(a);
+  }, [activeTransfers]);
 
   const renameDevice = useCallback(async (id: string, name: string) => {
     await api.renameDevice(id, name);
-  }, []);
-
-  const refreshDevices = useCallback(async () => {
-    const r = await api.getDevices();
-    if (r.success) {
-      setDevices(r.data?.devices?.filter((d: Device) => d.approved) || []);
-    }
+    setDevices((prev) => prev.map((d) => d.id === id ? { ...d, name } : d));
   }, []);
 
   const toggleTheme = useCallback(() => {
-    setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   }, []);
 
   const setDeviceName = useCallback((name: string) => {
@@ -559,13 +748,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const refreshDevices = useCallback(async () => {
+    try {
+      const res = await api.getDevices();
+      if (res.success && res.data?.devices) {
+        setDevices(res.data.devices);
+      }
+    } catch {}
+  }, []);
+
   const approveDeviceRequest = useCallback(async (devId: string, approve: boolean) => {
+    if (sessionToken && sessionToken.startsWith('supabase-')) {
+      supabaseService.approveDevice(approve, myDevice?.name || 'Host');
+      if (approve) {
+        const approvedDev = pendingDevices.find((d) => d.id === devId);
+        if (approvedDev) {
+          setDevices((prev) => [...prev, { ...approvedDev, approved: true }]);
+        }
+      }
+      setPendingDevices((prev) => prev.filter((d) => d.id !== devId));
+      return;
+    }
+
     const res = await api.approveDevice(devId, approve, sessionToken || '');
     if (res.success) {
       setPendingDevices((prev) => prev.filter((d) => d.id !== devId));
       refreshDevices();
     }
-  }, [sessionToken, refreshDevices]);
+  }, [sessionToken, refreshDevices, pendingDevices, myDevice]);
 
   const value: AppState = {
     isConnected,
@@ -585,6 +795,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     activeTransfers,
     transferHistory,
     theme,
+    createRoom,
+    joinRoomWithPin,
     startPairing,
     submitPin,
     pollPairStatus,

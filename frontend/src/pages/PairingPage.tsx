@@ -6,7 +6,7 @@ import { api } from '../api/client';
 type Step = 'welcome' | 'name' | 'pin' | 'waiting' | 'host_view';
 
 export default function PairingPage() {
-  const { startPairing, submitPin, hostInfo, qrCode, qrUrl, pairingStep, pollPairStatus } = useApp();
+  const { createRoom, startPairing, submitPin, hostInfo, qrCode, qrUrl, pairingStep, pollPairStatus } = useApp();
   const { addToast } = useContext(ToastContext);
 
   const [step, setStep] = useState<Step>('welcome');
@@ -39,8 +39,8 @@ export default function PairingPage() {
     }
   }, [pairingStep]);
 
-  const handleStart = async () => {
-    const defaultName = /iPhone|iPad/i.test(navigator.userAgent)
+  const getDefaultName = () => {
+    return /iPhone|iPad/i.test(navigator.userAgent)
       ? 'iPhone'
       : /Android/i.test(navigator.userAgent)
       ? 'Android Device'
@@ -49,20 +49,30 @@ export default function PairingPage() {
       : /Windows/i.test(navigator.userAgent)
       ? 'Windows PC'
       : 'My Device';
+  };
 
-    const finalName = name.trim() || defaultName;
+  const handleCreateRoom = async () => {
+    const finalName = name.trim() || getDefaultName();
     setName(finalName);
     setError('');
     setLoading(true);
     try {
-      await startPairing(finalName);
-      setStep('pin');
+      await createRoom(finalName);
     } catch (e: any) {
-      setError(e.message || 'Failed to start pairing');
+      setError(e.message || 'Failed to create room');
     } finally {
       setLoading(false);
     }
   };
+
+  const handleGoToPin = () => {
+    const finalName = name.trim() || getDefaultName();
+    setName(finalName);
+    startPairing(finalName);
+    setStep('pin');
+  };
+
+  const handleStart = handleGoToPin;
 
   const handlePinSubmit = async () => {
     const pinStr = pin.join('');
@@ -157,16 +167,27 @@ export default function PairingPage() {
               />
             </div>
             {error && <p className="text-danger fs-sm mt-1" role="alert">{error}</p>}
-            <button
-              id="start-pairing-btn"
-              className="btn btn-primary btn-full btn-lg mt-2"
-              onClick={handleStart}
-              disabled={loading}
-            >
-              {loading ? <span className="spinner" /> : '🔗 Connect to Host'}
-            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '1.25rem' }}>
+              <button
+                id="create-room-btn"
+                className="btn btn-primary btn-full btn-lg"
+                onClick={handleCreateRoom}
+                disabled={loading}
+              >
+                {loading ? <span className="spinner" /> : '⚡ Create Room (Get PIN)'}
+              </button>
+
+              <button
+                id="join-pin-btn"
+                className="btn btn-secondary btn-full btn-lg"
+                onClick={handleGoToPin}
+                disabled={loading}
+              >
+                🔑 Connect with PIN
+              </button>
+            </div>
             <p className="text-center text-muted fs-xs mt-2">
-              Make sure you're on the same Wi-Fi network as the host computer.
+              Enter PIN on the second device to connect instantly.
             </p>
           </div>
         )}
