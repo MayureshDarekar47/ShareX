@@ -23,38 +23,21 @@ export class SupabaseService {
   private channel: any = null;
   private networkChannel: any = null;
   private currentPin: string = '';
-  private currentNetworkId: string = '';
+  private currentNetworkId: string = 'sharex_mesh_room';
 
   generatePin(): string {
     return String(Math.floor(100000 + Math.random() * 900000));
   }
 
-  // ── Network Peer Discovery (Same Wi-Fi / IP) ──
+  // ── Network Peer Discovery ──
   async getNetworkId(): Promise<string> {
-    if (this.currentNetworkId) return this.currentNetworkId;
-    try {
-      const res = await fetch('https://api.ipify.org?format=json');
-      const data = await res.json();
-      if (data?.ip) {
-        this.currentNetworkId = 'net_' + data.ip.replace(/[^a-zA-Z0-9]/g, '_');
-        return this.currentNetworkId;
-      }
-    } catch {
-      try {
-        const res = await fetch('https://api64.ipify.org?format=json');
-        const data = await res.json();
-        if (data?.ip) {
-          this.currentNetworkId = 'net_' + data.ip.replace(/[^a-zA-Z0-9]/g, '_');
-          return this.currentNetworkId;
-        }
-      } catch {}
-    }
-    this.currentNetworkId = 'net_public_lobby';
-    return this.currentNetworkId;
+    // We use a shared mesh channel so devices always connect reliably
+    // even if one is on IPv4 and another on IPv6
+    return 'sharex_mesh_room';
   }
 
   async joinNetworkLobby(
-    networkId: string,
+    _networkId: string,
     myDev: Device,
     callbacks: {
       onDevicesChange: (devices: Device[]) => void;
@@ -62,11 +45,15 @@ export class SupabaseService {
     }
   ) {
     if (this.networkChannel) {
-      supabase.removeChannel(this.networkChannel);
+      try {
+        supabase.removeChannel(this.networkChannel);
+      } catch {}
       this.networkChannel = null;
     }
 
-    const channelName = `sharex_${networkId}`;
+    const channelName = 'sharex_mesh_room';
+    this.currentNetworkId = channelName;
+
     this.networkChannel = supabase.channel(channelName, {
       config: {
         presence: { key: myDev.id },
@@ -87,16 +74,20 @@ export class SupabaseService {
         callbacks.onDevicesChange(onlineList);
       })
       .on('broadcast', { event: 'file_sent' }, (payload: any) => {
-        if (payload?.payload?.file) {
-          const file: SupabaseSharedFile = payload.payload.file;
-          const target = payload.payload.targetDeviceId;
+        console.log('[Supabase Realtime] Incoming file_sent broadcast:', payload);
+        const data = payload?.payload || payload;
+        const file: SupabaseSharedFile = data?.file || data;
+        const target = data?.targetDeviceId;
+
+        if (file && file.url) {
+          // Accept if intended for everyone, host, or this specific device
           if (!target || target === 'all' || target === 'host' || target === myDev.id) {
             callbacks.onFileReceived(file);
           }
         }
       })
       .subscribe(async (status: string) => {
-        console.log(`[Supabase Realtime] Network channel ${channelName} status:`, status);
+        console.log(`[Supabase Realtime] Mesh channel ${channelName} status:`, status);
         if (status === 'SUBSCRIBED') {
           await this.networkChannel.track({
             device: myDev,
@@ -141,13 +132,16 @@ export class SupabaseService {
 
     this.channel
       .on('broadcast', { event: 'pair_request' }, (payload: any) => {
-        if (payload?.payload?.device) {
-          callbacks.onPairRequest(payload.payload.device);
+        const data = payload?.payload || payload;
+        if (data?.device) {
+          callbacks.onPairRequest(data.device);
         }
       })
       .on('broadcast', { event: 'file_sent' }, (payload: any) => {
-        if (payload?.payload?.file) {
-          callbacks.onFileReceived(payload.payload.file);
+        const data = payload?.payload || payload;
+        const file: SupabaseSharedFile = data?.file || data;
+        if (file && file.url) {
+          callbacks.onFileReceived(file);
         }
       })
       .subscribe((status: string) => {
@@ -178,8 +172,9 @@ export class SupabaseService {
 
       this.channel
         .on('broadcast', { event: 'pair_approved' }, (payload: any) => {
-          if (payload?.payload?.approved) {
-            callbacks.onApproved({ name: payload.payload.hostName || 'Host' });
+          const data = payload?.payload || payload;
+          if (data?.approved) {
+            callbacks.onApproved({ name: data.hostName || 'Host' });
             resolve(true);
           } else {
             callbacks.onRejected();
@@ -187,8 +182,10 @@ export class SupabaseService {
           }
         })
         .on('broadcast', { event: 'file_sent' }, (payload: any) => {
-          if (payload?.payload?.file) {
-            callbacks.onFileReceived(payload.payload.file);
+          const data = payload?.payload || payload;
+          const file: SupabaseSharedFile = data?.file || data;
+          if (file && file.url) {
+            callbacks.onFileReceived(file);
           }
         })
         .subscribe((status: string) => {
@@ -225,7 +222,7 @@ export class SupabaseService {
   ): Promise<{ success: boolean; error?: string; fileInfo?: SupabaseSharedFile }> {
     try {
       const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const folder = this.currentPin || this.currentNetworkId || 'public';
+      const folder = this.currentPin || 'transfers';
       const filePath = `${folder}/${Date.now()}_${sanitizedName}`;
 
       const { data, error } = await supabase.storage
@@ -257,18 +254,18 @@ export class SupabaseService {
 
       const payload = { file: fileInfo, targetDeviceId: targetDeviceId || 'all' };
 
-      // Broadcast to PIN room if active
-      if (this.channel) {
-        await this.channel.send({
+      // Broadcast to Network / Mesh lobby channel
+      if (this.networkChannel) {
+        await this.networkChannel.send({
           type: 'broadcast',
           event: 'file_sent',
           payload,
         });
       }
 
-      // Broadcast to Network lobby channel if active
-      if (this.networkChannel) {
-        await this.networkChannel.send({
+      // Broadcast to PIN room if active
+      if (this.channel) {
+        await this.channel.send({
           type: 'broadcast',
           event: 'file_sent',
           payload,

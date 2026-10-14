@@ -152,16 +152,14 @@ function TransferCard({ transfer }: { transfer: ActiveTransfer }) {
                 <div className="file-name" title={f.name}>{f.name}</div>
                 <div className="file-size">{formatBytes(f.size)}</div>
               </div>
-              {(transfer.direction === 'receive' || transfer.receiverId === 'host') && (
-                <button
-                  id={`download-${transfer.transferId}-${i}`}
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => handleDownload(i)}
-                  aria-label={`Download ${f.name}`}
-                >
-                  ↓ Save
-                </button>
-              )}
+              <button
+                id={`download-${transfer.transferId}-${i}`}
+                className="btn btn-secondary btn-sm"
+                onClick={() => handleDownload(i)}
+                aria-label={`Download ${f.name}`}
+              >
+                ↓ Save File
+              </button>
             </li>
           ))}
         </ul>

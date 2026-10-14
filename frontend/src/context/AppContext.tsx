@@ -195,6 +195,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             setDevices(others);
           },
           onFileReceived: (sharedFile: SupabaseSharedFile) => {
+            console.log('Successfully received shared file:', sharedFile);
+            try {
+              const a = document.createElement('a');
+              a.href = sharedFile.url;
+              a.download = sharedFile.name;
+              a.target = '_blank';
+              document.body.appendChild(a);
+              a.click();
+              setTimeout(() => {
+                try { document.body.removeChild(a); } catch {}
+              }, 1000);
+            } catch (err) {
+              console.warn('Auto download error:', err);
+            }
+
             const incoming: ActiveTransfer = {
               id: `supabase-${sharedFile.id}`,
               transferId: sharedFile.id,
