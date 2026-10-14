@@ -245,20 +245,20 @@ function SendPanel() {
           <label className="label">Send to</label>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             <div
-              className={`device-card ${selectedReceiver === 'host' ? 'selected' : ''}`}
-              onClick={() => setSelectedReceiver('host')}
-              id="receiver-host"
+              className={`device-card ${selectedReceiver === 'all' || selectedReceiver === 'host' ? 'selected' : ''}`}
+              onClick={() => setSelectedReceiver('all')}
+              id="receiver-all"
               role="radio"
-              aria-checked={selectedReceiver === 'host'}
+              aria-checked={selectedReceiver === 'all' || selectedReceiver === 'host'}
               tabIndex={0}
-              onKeyDown={(e) => e.key === 'Enter' && setSelectedReceiver('host')}
+              onKeyDown={(e) => e.key === 'Enter' && setSelectedReceiver('all')}
             >
-              <div className="device-avatar">🖥</div>
+              <div className="device-avatar">🌐</div>
               <div className="device-info">
-                <div className="device-name">Host Computer</div>
-                <div className="device-meta">Save to received folder</div>
+                <div className="device-name">Everyone on Same Wi-Fi</div>
+                <div className="device-meta">Send to all connected devices</div>
               </div>
-              {selectedReceiver === 'host' && <span style={{ color: 'var(--accent-primary)' }}>✓</span>}
+              {(selectedReceiver === 'all' || selectedReceiver === 'host') && <span style={{ color: 'var(--accent-primary)' }}>✓</span>}
             </div>
 
             {otherDevices.map((d) => (
@@ -392,10 +392,12 @@ function TransfersPanel() {
 
 // ── Devices Panel ──
 function DevicesPanel() {
-  const { devices, myDevice, renameDevice, refreshDevices } = useApp();
+  const { devices, myDevice, renameDevice, refreshDevices, sendFiles } = useApp();
   const { addToast } = useContext(ToastContext);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [targetDeviceId, setTargetDeviceId] = useState<string | null>(null);
 
   const handleRename = async (id: string) => {
     if (!editName.trim()) return;
@@ -404,61 +406,145 @@ function DevicesPanel() {
     setEditingId(null);
   };
 
+  const handleQuickSend = (devId: string) => {
+    setTargetDeviceId(devId);
+    fileInputRef.current?.click();
+  };
+
+  const handleFilePicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length || !targetDeviceId) return;
+    addToast('info', `Sending ${files.length} file(s)...`);
+    try {
+      await sendFiles(targetDeviceId, files);
+      addToast('success', 'File sent successfully!');
+    } catch (err: any) {
+      addToast('error', err.message || 'Send failed');
+    }
+    e.target.value = '';
+    setTargetDeviceId(null);
+  };
+
+  const otherDevices = devices.filter((d) => d.id !== myDevice?.id);
+
   return (
-    <div className="card">
-      <div className="card-header">
-        <span className="card-title">🖥 Devices ({devices.length})</span>
-        <button className="btn btn-ghost btn-sm" onClick={refreshDevices} id="refresh-devices-btn">↺ Refresh</button>
-      </div>
-      <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-        {devices.length === 0 ? (
-          <div className="empty-state">
-            <span className="empty-icon">📵</span>
-            <span className="empty-title">Only you're connected</span>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      {/* Hidden file input for quick direct send */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        style={{ display: 'none' }}
+        onChange={handleFilePicked}
+      />
+
+      {/* Your current device */}
+      {myDevice && (
+        <div className="card">
+          <div className="card-header">
+            <span className="card-title">📱 Your Device</span>
           </div>
-        ) : (
-          devices.map((d) => (
-            <div key={d.id} className="device-card" style={{ cursor: 'default' }}>
-              <div className="device-avatar">{getDeviceEmoji(d.os)}</div>
+          <div className="card-body">
+            <div className="device-card" style={{ cursor: 'default', border: '1px solid var(--accent, #6366f1)' }}>
+              <div className="device-avatar">{getDeviceEmoji(myDevice.os)}</div>
               <div className="device-info">
-                {editingId === d.id ? (
+                {editingId === myDevice.id ? (
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
                     <input
                       className="input"
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') handleRename(d.id); if (e.key === 'Escape') setEditingId(null); }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleRename(myDevice.id);
+                        if (e.key === 'Escape') setEditingId(null);
+                      }}
                       autoFocus
                       style={{ padding: '0.25rem 0.5rem', fontSize: '0.85rem' }}
-                      id={`rename-input-${d.id}`}
+                      id="rename-my-device-input"
                     />
-                    <button className="btn btn-primary btn-sm" onClick={() => handleRename(d.id)}>✓</button>
+                    <button className="btn btn-primary btn-sm" onClick={() => handleRename(myDevice.id)}>✓</button>
                     <button className="btn btn-ghost btn-sm" onClick={() => setEditingId(null)}>✕</button>
                   </div>
                 ) : (
                   <>
                     <div className="device-name">
-                      {d.name}
-                      {d.id === myDevice?.id && <span className="fs-xs text-muted"> (you)</span>}
+                      {myDevice.name} <span className="fs-xs text-muted">(you)</span>
                     </div>
-                    <div className="device-meta">{d.os} · {d.type}</div>
+                    <div className="device-meta">{myDevice.os} · {myDevice.type}</div>
                   </>
                 )}
               </div>
-              {editingId !== d.id && d.id === myDevice?.id && (
+              {editingId !== myDevice.id && (
                 <button
                   className="btn btn-ghost btn-sm"
-                  onClick={() => { setEditingId(d.id); setEditName(d.name); }}
-                  id={`rename-device-${d.id}`}
-                  aria-label="Rename device"
+                  onClick={() => { setEditingId(myDevice.id); setEditName(myDevice.name); }}
+                  title="Rename your device"
+                  id="rename-device-btn"
                 >
-                  ✏
+                  ✏ Rename
                 </button>
               )}
               <div className="status-dot connected" title="Online" />
             </div>
-          ))
-        )}
+          </div>
+        </div>
+      )}
+
+      {/* Online devices on same Wi-Fi */}
+      <div className="card">
+        <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <span className="card-title">🌐 Online on Same Wi-Fi ({otherDevices.length})</span>
+            <div className="fs-xs text-muted" style={{ marginTop: '0.2rem' }}>
+              Auto-discovered devices connected to your same network
+            </div>
+          </div>
+          <button className="btn btn-ghost btn-sm" onClick={refreshDevices} id="refresh-devices-btn">
+            ↺ Refresh
+          </button>
+        </div>
+        <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          {otherDevices.length === 0 ? (
+            <div className="empty-state" style={{ padding: '2rem 1rem', textAlign: 'center' }}>
+              <span className="empty-icon" style={{ fontSize: '2.5rem' }}>📡</span>
+              <span className="empty-title" style={{ marginTop: '0.5rem', fontWeight: 600 }}>
+                Looking for nearby devices...
+              </span>
+              <p className="empty-subtitle" style={{ fontSize: '0.85rem', color: 'var(--text-muted, #94a3b8)', maxWidth: 420, margin: '0.5rem auto 0' }}>
+                Open <strong>sharex-mayur.vercel.app</strong> on your other phone, tablet, or laptop on the <strong>same Wi-Fi</strong>. They will appear here automatically!
+              </p>
+            </div>
+          ) : (
+            otherDevices.map((d) => (
+              <div key={d.id} className="device-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <div className="device-avatar">{getDeviceEmoji(d.os)}</div>
+                  <div className="device-info">
+                    <div className="device-name" style={{ fontWeight: 600 }}>{d.name}</div>
+                    <div className="device-meta" style={{ fontSize: '0.8rem', color: 'var(--text-muted, #94a3b8)' }}>
+                      {d.os} · {d.type}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', color: '#10b981' }}>
+                    <div className="status-dot connected" style={{ width: 8, height: 8 }} />
+                    <span>Online</span>
+                  </div>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={() => handleQuickSend(d.id)}
+                    id={`send-to-${d.id}`}
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                  >
+                    <span>📤</span> Send File
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </div>
     </div>
   );

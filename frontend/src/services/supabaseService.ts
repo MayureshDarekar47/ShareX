@@ -21,10 +21,104 @@ export interface SupabaseSharedFile {
 
 export class SupabaseService {
   private channel: any = null;
+  private networkChannel: any = null;
   private currentPin: string = '';
+  private currentNetworkId: string = '';
 
   generatePin(): string {
     return String(Math.floor(100000 + Math.random() * 900000));
+  }
+
+  // ── Network Peer Discovery (Same Wi-Fi / IP) ──
+  async getNetworkId(): Promise<string> {
+    if (this.currentNetworkId) return this.currentNetworkId;
+    try {
+      const res = await fetch('https://api.ipify.org?format=json');
+      const data = await res.json();
+      if (data?.ip) {
+        this.currentNetworkId = 'net_' + data.ip.replace(/[^a-zA-Z0-9]/g, '_');
+        return this.currentNetworkId;
+      }
+    } catch {
+      try {
+        const res = await fetch('https://api64.ipify.org?format=json');
+        const data = await res.json();
+        if (data?.ip) {
+          this.currentNetworkId = 'net_' + data.ip.replace(/[^a-zA-Z0-9]/g, '_');
+          return this.currentNetworkId;
+        }
+      } catch {}
+    }
+    this.currentNetworkId = 'net_public_lobby';
+    return this.currentNetworkId;
+  }
+
+  async joinNetworkLobby(
+    networkId: string,
+    myDev: Device,
+    callbacks: {
+      onDevicesChange: (devices: Device[]) => void;
+      onFileReceived: (file: SupabaseSharedFile) => void;
+    }
+  ) {
+    if (this.networkChannel) {
+      supabase.removeChannel(this.networkChannel);
+      this.networkChannel = null;
+    }
+
+    const channelName = `sharex_${networkId}`;
+    this.networkChannel = supabase.channel(channelName, {
+      config: {
+        presence: { key: myDev.id },
+        broadcast: { self: false },
+      },
+    });
+
+    this.networkChannel
+      .on('presence', { event: 'sync' }, () => {
+        const state = this.networkChannel.presenceState();
+        const onlineList: Device[] = [];
+        for (const key of Object.keys(state)) {
+          const presences = state[key] as any[];
+          if (presences && presences.length > 0 && presences[0].device) {
+            onlineList.push(presences[0].device);
+          }
+        }
+        callbacks.onDevicesChange(onlineList);
+      })
+      .on('broadcast', { event: 'file_sent' }, (payload: any) => {
+        if (payload?.payload?.file) {
+          const file: SupabaseSharedFile = payload.payload.file;
+          const target = payload.payload.targetDeviceId;
+          if (!target || target === 'all' || target === 'host' || target === myDev.id) {
+            callbacks.onFileReceived(file);
+          }
+        }
+      })
+      .subscribe(async (status: string) => {
+        console.log(`[Supabase Realtime] Network channel ${channelName} status:`, status);
+        if (status === 'SUBSCRIBED') {
+          await this.networkChannel.track({
+            device: myDev,
+            onlineAt: Date.now(),
+          });
+        }
+      });
+
+    return this.networkChannel;
+  }
+
+  async updatePresence(updatedDev: Device) {
+    if (this.networkChannel) {
+      try {
+        await this.networkChannel.track({
+          device: updatedDev,
+          onlineAt: Date.now(),
+        });
+      } catch (err) {
+        console.warn('Failed to update presence', err);
+      }
+    }
   }
 
   // ── Host: Create a room with a 6-digit PIN ──
@@ -99,7 +193,6 @@ export class SupabaseService {
         })
         .subscribe((status: string) => {
           if (status === 'SUBSCRIBED') {
-            // Send pair request to host
             this.channel.send({
               type: 'broadcast',
               event: 'pair_request',
@@ -108,14 +201,12 @@ export class SupabaseService {
           }
         });
 
-      // Timeout after 30s if no response
       setTimeout(() => {
         resolve(false);
       }, 30000);
     });
   }
 
-  // ── Host approves device ──
   approveDevice(approved: boolean, hostName: string) {
     if (this.channel) {
       this.channel.send({
@@ -130,11 +221,12 @@ export class SupabaseService {
   async shareFile(
     file: File,
     senderDevice: Device,
-    onProgress?: (progress: number) => void
+    targetDeviceId?: string
   ): Promise<{ success: boolean; error?: string; fileInfo?: SupabaseSharedFile }> {
     try {
       const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const filePath = `${this.currentPin || 'room'}/${Date.now()}_${sanitizedName}`;
+      const folder = this.currentPin || this.currentNetworkId || 'public';
+      const filePath = `${folder}/${Date.now()}_${sanitizedName}`;
 
       const { data, error } = await supabase.storage
         .from('sharex-files')
@@ -163,12 +255,23 @@ export class SupabaseService {
         timestamp: Date.now(),
       };
 
-      // Broadcast file info to all devices in the room
+      const payload = { file: fileInfo, targetDeviceId: targetDeviceId || 'all' };
+
+      // Broadcast to PIN room if active
       if (this.channel) {
         await this.channel.send({
           type: 'broadcast',
           event: 'file_sent',
-          payload: { file: fileInfo },
+          payload,
+        });
+      }
+
+      // Broadcast to Network lobby channel if active
+      if (this.networkChannel) {
+        await this.networkChannel.send({
+          type: 'broadcast',
+          event: 'file_sent',
+          payload,
         });
       }
 

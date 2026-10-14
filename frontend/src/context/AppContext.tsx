@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { Device, HostInfo, ActiveTransfer, TransferStatus, DeviceOS } from '../types';
+import { Device, HostInfo, ActiveTransfer, TransferStatus, DeviceOS, DeviceType } from '../types';
 import { api } from '../api/client';
 import { wsClient, useWebSocket } from '../api/websocket';
 import { supabaseService, SupabaseSharedFile } from '../services/supabaseService';
@@ -83,6 +83,30 @@ function computeChecksum(file: File): Promise<string> {
   });
 }
 
+function getDefaultDeviceName(): string {
+  const ua = navigator.userAgent;
+  if (/iPhone/i.test(ua)) return 'iPhone';
+  if (/iPad/i.test(ua)) return 'iPad';
+  if (/Android/i.test(ua)) {
+    const match = ua.match(/;\s*([^;)]+)\s+Build/i);
+    if (match && match[1]) {
+      return match[1].trim();
+    }
+    return 'Android Phone';
+  }
+  if (/Windows/i.test(ua)) return 'Windows PC';
+  if (/Macintosh/i.test(ua)) return 'MacBook';
+  if (/Linux/i.test(ua)) return 'Linux Device';
+  return 'My Device';
+}
+
+function getClientType(): DeviceType {
+  const ua = navigator.userAgent;
+  if (/iPhone|iPad|iPod|Android/i.test(ua)) return 'mobile';
+  if (/Tablet|iPad/i.test(ua)) return 'tablet';
+  return 'desktop';
+}
+
 function getClientOS(): DeviceOS {
   const ua = navigator.userAgent;
   if (/iPhone|iPad|iPod/i.test(ua)) return 'ios';
@@ -118,7 +142,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const deviceNameRef = useRef<string>(localStorage.getItem('sharex_device_name') || '');
   const pairPollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Auto-claim host session on localhost
+  // Auto-claim host session on localhost OR auto-join Wi-Fi network lobby on cloud/Vercel
   useEffect(() => {
     const isLocalhost =
       window.location.hostname === 'localhost' ||
@@ -139,6 +163,66 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setIsConnected(true);
         }
       }).catch(() => {});
+    } else {
+      // Automatic network initialization for Cloud/Vercel: Discover all online devices on same Wi-Fi
+      const savedName = localStorage.getItem('sharex_device_name') || getDefaultDeviceName();
+      const savedId = localStorage.getItem('sharex_device_id') || `dev-${Math.random().toString(36).substring(2, 8)}`;
+      const token = localStorage.getItem('sharex_token') || `supabase-${savedId}`;
+
+      localStorage.setItem('sharex_device_id', savedId);
+      localStorage.setItem('sharex_device_name', savedName);
+      localStorage.setItem('sharex_token', token);
+
+      const currentDev: Device = {
+        id: savedId,
+        name: savedName,
+        type: getClientType(),
+        os: getClientOS(),
+        pairedAt: Date.now(),
+        lastSeen: Date.now(),
+        approved: true,
+      };
+
+      setMyDevice(currentDev);
+      setDeviceId(savedId);
+      setSessionToken(token);
+      setIsConnected(true);
+
+      supabaseService.getNetworkId().then((netId) => {
+        supabaseService.joinNetworkLobby(netId, currentDev, {
+          onDevicesChange: (onlineList) => {
+            const others = onlineList.filter((d) => d.id !== savedId);
+            setDevices(others);
+          },
+          onFileReceived: (sharedFile: SupabaseSharedFile) => {
+            const incoming: ActiveTransfer = {
+              id: `supabase-${sharedFile.id}`,
+              transferId: sharedFile.id,
+              files: [],
+              fileInfos: [{
+                name: sharedFile.name,
+                size: sharedFile.size,
+                mimeType: sharedFile.type,
+              }],
+              receiverId: savedId,
+              status: 'completed',
+              progress: 100,
+              speed: 0,
+              eta: 0,
+              downloadUrls: [sharedFile.url],
+              direction: 'receive',
+              senderName: sharedFile.senderName,
+            };
+            setActiveTransfers((prev) => [incoming, ...prev]);
+            setTransferHistory((prev) => [{
+              id: sharedFile.id,
+              files: [{ name: sharedFile.name, size: sharedFile.size }],
+              status: 'completed',
+              createdAt: Date.now(),
+            }, ...prev]);
+          },
+        });
+      });
     }
   }, []);
 
@@ -576,7 +660,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         };
         setActiveTransfers((prev) => [localTransfer, ...prev]);
 
-        const res = await supabaseService.shareFile(file, myDevice || ({ id: 'sender', name: 'Device', type: 'mobile', os: 'unknown', approved: true, pairedAt: 0, lastSeen: 0 } as Device));
+        const sender = myDevice || ({ id: deviceId || 'sender', name: 'Device', type: 'mobile', os: 'unknown', approved: true, pairedAt: 0, lastSeen: 0 } as Device);
+        const res = await supabaseService.shareFile(file, sender, receiverId);
         if (res.success && res.fileInfo) {
           setActiveTransfers((prev) =>
             prev.map((t) => t.id === localTransfer.id ? { ...t, status: 'completed', progress: 100, downloadUrls: [res.fileInfo!.url] } : t)
@@ -719,9 +804,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [activeTransfers]);
 
   const renameDevice = useCallback(async (id: string, name: string) => {
-    await api.renameDevice(id, name);
-    setDevices((prev) => prev.map((d) => d.id === id ? { ...d, name } : d));
-  }, []);
+    if (myDevice && id === myDevice.id) {
+      const updated = { ...myDevice, name };
+      setMyDevice(updated);
+      localStorage.setItem('sharex_device_name', name);
+      supabaseService.updatePresence(updated);
+    }
+    setDevices((prev) => prev.map((d) => (d.id === id ? { ...d, name } : d)));
+    try {
+      await api.renameDevice(id, name);
+    } catch {}
+  }, [myDevice]);
 
   const toggleTheme = useCallback(() => {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
