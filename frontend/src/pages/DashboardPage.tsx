@@ -71,8 +71,101 @@ function getStatusLabel(status: string): string {
   }
 }
 
+function isImageFilename(filename: string): boolean {
+  const ext = filename.split('.').pop()?.toLowerCase() || '';
+  return ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg', 'bmp', 'avif'].includes(ext);
+}
+
+// ── Image Preview Modal ──
+function ImagePreviewModal({
+  image,
+  onClose,
+}: {
+  image: { url: string; name: string } | null;
+  onClose: () => void;
+}) {
+  if (!image) return null;
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.88)',
+        backdropFilter: 'blur(10px)',
+        zIndex: 9999,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '1rem',
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          position: 'relative',
+          maxWidth: '92vw',
+          maxHeight: '90vh',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '0.75rem' }}>
+          <span style={{ color: '#fff', fontWeight: 600, fontSize: '0.95rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '70vw' }}>
+            {image.name}
+          </span>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={onClose}
+            style={{ color: '#fff', fontSize: '1.25rem', padding: '0.2rem 0.6rem' }}
+          >
+            ✕
+          </button>
+        </div>
+
+        <img
+          src={image.url}
+          alt={image.name}
+          style={{
+            maxWidth: '100%',
+            maxHeight: '75vh',
+            objectFit: 'contain',
+            borderRadius: '10px',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.8)',
+          }}
+        />
+
+        <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
+          <a
+            href={image.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            download={image.name}
+            className="btn btn-primary btn-sm"
+            style={{ textDecoration: 'none' }}
+          >
+            ↓ Download Image
+          </a>
+          <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ color: '#fff' }}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Transfer Card ──
-function TransferCard({ transfer }: { transfer: ActiveTransfer }) {
+function TransferCard({
+  transfer,
+  onPreviewImage,
+}: {
+  transfer: ActiveTransfer;
+  onPreviewImage?: (img: { url: string; name: string }) => void;
+}) {
   const { cancelTransfer, retryTransfer, downloadFile, approveIncomingTransfer } = useApp();
   const { addToast } = useContext(ToastContext);
   const totalSize = transfer.fileInfos.reduce((s, f) => s + f.size, 0);
@@ -81,6 +174,71 @@ function TransferCard({ transfer }: { transfer: ActiveTransfer }) {
     downloadFile(transfer.transferId, i, transfer.fileInfos[i].name);
     addToast('info', `Downloading ${transfer.fileInfos[i].name}...`);
   };
+
+  // Text message card
+  if (transfer.transferType === 'text') {
+    const handleCopy = async () => {
+      if (transfer.textContent) {
+        await navigator.clipboard.writeText(transfer.textContent).catch(() => {});
+        addToast('success', 'Text copied to clipboard!');
+      }
+    };
+
+    const isUrl = transfer.textContent?.startsWith('http://') || transfer.textContent?.startsWith('https://');
+
+    return (
+      <div className="transfer-card completed" style={{ borderLeft: '4px solid #8b5cf6', background: 'rgba(139, 92, 246, 0.05)' }}>
+        <div className="transfer-header">
+          <div>
+            <div className="transfer-files" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <span>💬 Message</span>
+            </div>
+            <div className="transfer-size">
+              {transfer.direction === 'receive'
+                ? <>From: <strong>{transfer.senderName || 'Peer'}</strong></>
+                : <>Sent to peer</>}
+            </div>
+          </div>
+          <span className="transfer-status-badge badge-completed">
+            {transfer.direction === 'receive' ? '✓ Received' : '↑ Sent'}
+          </span>
+        </div>
+
+        <div
+          style={{
+            margin: '0.6rem 0',
+            padding: '0.75rem',
+            background: 'rgba(0,0,0,0.25)',
+            borderRadius: '8px',
+            fontSize: '0.9rem',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+            fontFamily: 'inherit',
+            lineHeight: 1.5,
+          }}
+        >
+          {transfer.textContent}
+        </div>
+
+        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.4rem' }}>
+          <button className="btn btn-secondary btn-sm" onClick={handleCopy} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+            <span>📋</span> Copy Text
+          </button>
+          {isUrl && (
+            <a
+              href={transfer.textContent}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-ghost btn-sm"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+            >
+              <span>🔗</span> Open Link
+            </a>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`transfer-card ${transfer.status}`}>
@@ -103,26 +261,6 @@ function TransferCard({ transfer }: { transfer: ActiveTransfer }) {
         </span>
       </div>
 
-      {/* Incoming approval */}
-      {transfer.direction === 'receive' && transfer.status === 'waiting_approval' && (
-        <div className="approval-actions mb-1" style={{ marginBottom: '0.75rem' }}>
-          <button
-            id={`approve-transfer-${transfer.transferId}`}
-            className="btn btn-primary btn-sm"
-            onClick={() => approveIncomingTransfer(transfer.transferId, true)}
-          >
-            ✓ Accept
-          </button>
-          <button
-            id={`reject-transfer-${transfer.transferId}`}
-            className="btn btn-danger btn-sm"
-            onClick={() => approveIncomingTransfer(transfer.transferId, false)}
-          >
-            ✗ Decline
-          </button>
-        </div>
-      )}
-
       {/* Progress bar */}
       {['uploading', 'relaying', 'approved'].includes(transfer.status) && (
         <>
@@ -137,63 +275,86 @@ function TransferCard({ transfer }: { transfer: ActiveTransfer }) {
         </>
       )}
 
-      {/* Error message */}
-      {transfer.status === 'failed' && transfer.error && (
-        <p className="text-danger fs-xs mt-1">{transfer.error}</p>
-      )}
-
-      {/* File list with download buttons */}
+      {/* File list with image thumbnail and preview/download buttons */}
       {transfer.status === 'completed' && (
         <ul className="file-list mt-1">
-          {transfer.fileInfos.map((f, i) => (
-            <li key={i} className="file-item">
-              <span className="file-icon">{getFileEmoji(f.name)}</span>
-              <div className="file-details">
-                <div className="file-name" title={f.name}>{f.name}</div>
-                <div className="file-size">{formatBytes(f.size)}</div>
-              </div>
-              <button
-                id={`download-${transfer.transferId}-${i}`}
-                className="btn btn-secondary btn-sm"
-                onClick={() => handleDownload(i)}
-                aria-label={`Download ${f.name}`}
-              >
-                ↓ Save File
-              </button>
-            </li>
-          ))}
+          {transfer.fileInfos.map((f, i) => {
+            const fileUrl = transfer.downloadUrls?.[i] || transfer.downloadUrls?.[0];
+            const isImg = isImageFilename(f.name);
+
+            return (
+              <li key={i} className="file-item" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', overflow: 'hidden' }}>
+                  {isImg && fileUrl ? (
+                    <img
+                      src={fileUrl}
+                      alt={f.name}
+                      onClick={() => onPreviewImage?.({ url: fileUrl, name: f.name })}
+                      style={{
+                        width: 48,
+                        height: 48,
+                        borderRadius: 8,
+                        objectFit: 'cover',
+                        cursor: 'pointer',
+                        border: '1px solid var(--border-default)',
+                        flexShrink: 0,
+                      }}
+                      title="Click to preview image"
+                    />
+                  ) : (
+                    <span className="file-icon" style={{ fontSize: '1.5rem', flexShrink: 0 }}>
+                      {getFileEmoji(f.name)}
+                    </span>
+                  )}
+
+                  <div className="file-details" style={{ overflow: 'hidden' }}>
+                    <div className="file-name" title={f.name} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {f.name}
+                    </div>
+                    <div className="file-size">{formatBytes(f.size)}</div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.4rem', flexShrink: 0 }}>
+                  <button
+                    id={`download-${transfer.transferId}-${i}`}
+                    className="btn btn-primary btn-sm"
+                    onClick={() => handleDownload(i)}
+                    aria-label={`Download ${f.name}`}
+                  >
+                    ↓ Save
+                  </button>
+                  {fileUrl && (
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => {
+                        if (isImg && onPreviewImage) {
+                          onPreviewImage({ url: fileUrl, name: f.name });
+                        } else {
+                          window.open(fileUrl, '_blank');
+                        }
+                      }}
+                      title="Preview file"
+                    >
+                      👁 View
+                    </button>
+                  )}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
-
-      {/* Actions */}
-      <div className="flex gap-1 mt-1" style={{ flexWrap: 'wrap' }}>
-        {['uploading', 'waiting_approval', 'approved', 'relaying'].includes(transfer.status) && (
-          <button
-            id={`cancel-${transfer.id}`}
-            className="btn btn-danger btn-sm"
-            onClick={() => cancelTransfer(transfer.id)}
-          >
-            Cancel
-          </button>
-        )}
-        {transfer.status === 'failed' && transfer.files.length > 0 && (
-          <button
-            id={`retry-${transfer.id}`}
-            className="btn btn-secondary btn-sm"
-            onClick={() => retryTransfer(transfer.id)}
-          >
-            ↺ Retry
-          </button>
-        )}
-      </div>
     </div>
   );
 }
 
-// ── Send Files Panel ──
+// ── Send Files & Text Panel ──
 function SendPanel() {
-  const { devices, myDevice, sendFiles, pairedDevice } = useApp();
+  const { devices, myDevice, sendFiles, sendText, pairedDevice } = useApp();
   const { addToast } = useContext(ToastContext);
+  const [sendMode, setSendMode] = useState<'files' | 'text'>('files');
+  const [textMessage, setTextMessage] = useState('');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [selectedReceiver, setSelectedReceiver] = useState<string>(() => pairedDevice?.id || 'all');
   const [dragOver, setDragOver] = useState(false);
@@ -222,7 +383,7 @@ function SendPanel() {
     if (files.length) addFiles(files);
   };
 
-  const handleSend = async () => {
+  const handleSendFiles = async () => {
     if (!selectedFiles.length) { addToast('error', 'Select at least one file'); return; }
     setSending(true);
     try {
@@ -236,12 +397,56 @@ function SendPanel() {
     }
   };
 
+  const handleSendText = async () => {
+    if (!textMessage.trim()) return;
+    setSending(true);
+    try {
+      await sendText(textMessage.trim(), selectedReceiver);
+      setTextMessage('');
+      addToast('success', 'Message sent successfully!');
+    } catch (e: any) {
+      addToast('error', e.message || 'Failed to send text');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handlePasteClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        setTextMessage((prev) => (prev ? `${prev}\n${text}` : text));
+        addToast('success', 'Pasted from clipboard!');
+      }
+    } catch {
+      addToast('info', 'Please press Ctrl+V to paste manually');
+    }
+  };
+
   const otherDevices = devices.filter((d) => d.id !== myDevice?.id);
 
   return (
     <div className="card">
-      <div className="card-header">
-        <span className="card-title">📤 Send Files</span>
+      <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span className="card-title">📤 Send</span>
+        <div style={{ display: 'flex', gap: '0.35rem' }}>
+          <button
+            type="button"
+            className={`btn btn-sm ${sendMode === 'files' ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setSendMode('files')}
+            style={{ fontSize: '0.8rem', padding: '0.25rem 0.65rem' }}
+          >
+            📁 Files
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${sendMode === 'text' ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setSendMode('text')}
+            style={{ fontSize: '0.8rem', padding: '0.25rem 0.65rem' }}
+          >
+            💬 Text / Link
+          </button>
+        </div>
       </div>
       <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         {/* Receiver selector */}
@@ -260,7 +465,7 @@ function SendPanel() {
               <div className="device-avatar">🌐</div>
               <div className="device-info">
                 <div className="device-name">Everyone on Same Wi-Fi</div>
-                <div className="device-meta">Send to all connected devices</div>
+                <div className="device-meta">Send to all nearby devices</div>
               </div>
               {(selectedReceiver === 'all' || selectedReceiver === 'host') && <span style={{ color: 'var(--accent-primary)' }}>✓</span>}
             </div>
@@ -279,88 +484,130 @@ function SendPanel() {
                 <div className="device-avatar">{getDeviceEmoji(d.os)}</div>
                 <div className="device-info">
                   <div className="device-name">{d.name}</div>
-                  <div className="device-meta">{d.os} · {d.type}</div>
+                  <div className="device-meta">{d.os} · {d.type} {pairedDevice?.id === d.id ? '· ✓ Paired' : ''}</div>
                 </div>
                 {selectedReceiver === d.id && <span style={{ color: 'var(--accent-primary)' }}>✓</span>}
               </div>
             ))}
-
-            {otherDevices.length === 0 && (
-              <p className="text-muted fs-xs">No other devices connected. Only host transfer available.</p>
-            )}
           </div>
         </div>
 
-        {/* Drop zone */}
-        <div
-          className={`drop-zone ${dragOver ? 'drag-over' : ''}`}
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          role="button"
-          aria-label="Drop files here or click to select"
-          id="drop-zone"
-          tabIndex={0}
-          onKeyDown={(e) => e.key === 'Enter' && fileInputRef.current?.click()}
-        >
-          <span className="drop-icon">📂</span>
-          <div className="drop-title">Drop files here</div>
-          <div className="drop-subtitle">or click to select · Any file type</div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            onChange={(e) => addFiles(Array.from(e.target.files || []))}
-            style={{ display: 'none' }}
-            id="file-input"
-            aria-label="Select files to send"
-          />
-        </div>
-
-        {/* File list */}
-        {selectedFiles.length > 0 && (
-          <div>
-            <div className="flex justify-between items-center mb-1">
-              <span className="label">{selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''} · {formatBytes(totalSize)}</span>
-              <button className="btn btn-ghost btn-sm" onClick={() => setSelectedFiles([])}>Clear</button>
+        {/* ── Files Mode ── */}
+        {sendMode === 'files' && (
+          <>
+            <div
+              className={`drop-zone ${dragOver ? 'drag-over' : ''}`}
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              role="button"
+              aria-label="Drop files here or click to select"
+              id="drop-zone"
+              tabIndex={0}
+              onKeyDown={(e) => e.key === 'Enter' && fileInputRef.current?.click()}
+            >
+              <span className="drop-icon">📂</span>
+              <div className="drop-title">Drop files here</div>
+              <div className="drop-subtitle">or click to select · Any file type (Photos, Videos, Docs)</div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                onChange={(e) => addFiles(Array.from(e.target.files || []))}
+                style={{ display: 'none' }}
+                id="file-input"
+                aria-label="Select files to send"
+              />
             </div>
-            <ul className="file-list">
-              {selectedFiles.map((f, i) => (
-                <li key={i} className="file-item">
-                  <span className="file-icon">{getFileEmoji(f.name)}</span>
-                  <div className="file-details">
-                    <div className="file-name" title={f.name}>{f.name}</div>
-                    <div className="file-size">{formatBytes(f.size)}</div>
-                  </div>
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setSelectedFiles((prev) => prev.filter((_, j) => j !== i))}
-                    aria-label={`Remove ${f.name}`}
-                  >
-                    ✕
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
+
+            {selectedFiles.length > 0 && (
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <span className="label">{selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''} · {formatBytes(totalSize)}</span>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setSelectedFiles([])}>Clear</button>
+                </div>
+                <ul className="file-list">
+                  {selectedFiles.map((f, i) => (
+                    <li key={i} className="file-item">
+                      <span className="file-icon">{getFileEmoji(f.name)}</span>
+                      <div className="file-details">
+                        <div className="file-name" title={f.name}>{f.name}</div>
+                        <div className="file-size">{formatBytes(f.size)}</div>
+                      </div>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => setSelectedFiles((prev) => prev.filter((_, j) => j !== i))}
+                        aria-label={`Remove ${f.name}`}
+                      >
+                        ✕
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <button
+              id="send-btn"
+              className="btn btn-primary btn-full btn-lg"
+              onClick={handleSendFiles}
+              disabled={sending || selectedFiles.length === 0}
+            >
+              {sending ? <><span className="spinner" /> Sending...</> : '⚡ Send Files'}
+            </button>
+          </>
         )}
 
-        <button
-          id="send-btn"
-          className="btn btn-primary btn-full btn-lg"
-          onClick={handleSend}
-          disabled={sending || selectedFiles.length === 0}
-        >
-          {sending ? <><span className="spinner" /> Sending...</> : '⚡ Send Files'}
-        </button>
+        {/* ── Text / Message Mode ── */}
+        {sendMode === 'text' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <label className="label" style={{ margin: 0 }}>Type or paste text, note or link</label>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}
+                onClick={handlePasteClipboard}
+              >
+                📋 Paste Clipboard
+              </button>
+            </div>
+
+            <textarea
+              className="input"
+              style={{
+                minHeight: 120,
+                resize: 'vertical',
+                fontFamily: 'inherit',
+                padding: '0.75rem',
+                lineHeight: 1.5,
+              }}
+              placeholder="Type message, note, URL (https://...), code snippet, or paste anything here..."
+              value={textMessage}
+              onChange={(e) => setTextMessage(e.target.value)}
+            />
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span className="text-muted fs-xs">{textMessage.length} characters</span>
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={sending || !textMessage.trim()}
+                onClick={handleSendText}
+                style={{ padding: '0.5rem 1.25rem', fontWeight: 600 }}
+              >
+                {sending ? <><span className="spinner" /> Sending...</> : '📤 Send Text'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
 // ── Active Transfers ──
-function TransfersPanel() {
+function TransfersPanel({ onPreviewImage }: { onPreviewImage?: (img: { url: string; name: string }) => void }) {
   const { activeTransfers } = useApp();
 
   if (activeTransfers.length === 0) {
@@ -387,7 +634,7 @@ function TransfersPanel() {
       </div>
       <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         {activeTransfers.map((t) => (
-          <TransferCard key={t.id} transfer={t} />
+          <TransferCard key={t.id} transfer={t} onPreviewImage={onPreviewImage} />
         ))}
       </div>
     </div>
@@ -677,6 +924,7 @@ export default function DashboardPage() {
   const { addToast } = useContext(ToastContext);
   const [activeTab, setActiveTab] = useState<'send' | 'devices' | 'history'>('send');
   const [copied, setCopied] = useState(false);
+  const [previewImage, setPreviewImage] = useState<{ url: string; name: string } | null>(null);
 
   const copyUrl = async (url: string) => {
     await navigator.clipboard.writeText(url).catch(() => {});
@@ -848,7 +1096,7 @@ export default function DashboardPage() {
             <SendPanel />
           </div>
           <div className="dashboard-col">
-            <TransfersPanel />
+            <TransfersPanel onPreviewImage={setPreviewImage} />
 
             {/* Quick connect card */}
             {(isHost || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && (
@@ -928,6 +1176,9 @@ export default function DashboardPage() {
           Background transfers are limited by the browser — keep this tab open during transfers.
         </div>
       </div>
+
+      {/* Image Preview Modal */}
+      <ImagePreviewModal image={previewImage} onClose={() => setPreviewImage(null)} />
     </div>
   );
 }

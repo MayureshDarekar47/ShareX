@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { Device, HostInfo, ActiveTransfer, TransferStatus, DeviceOS, DeviceType } from '../types';
 import { api } from '../api/client';
 import { wsClient, useWebSocket } from '../api/websocket';
-import { supabaseService, SupabaseSharedFile } from '../services/supabaseService';
+import { supabaseService, SupabaseSharedFile, SupabaseSharedText } from '../services/supabaseService';
 
 interface AppState {
   // Auth state
@@ -51,6 +51,7 @@ interface AppState {
   pollPairStatus: () => Promise<boolean>;
   approveDeviceRequest: (deviceId: string, approve: boolean) => Promise<void>;
   sendFiles: (receiverId: string, files: File[]) => Promise<void>;
+  sendText: (text: string, receiverId?: string) => Promise<void>;
   cancelTransfer: (id: string) => Promise<void>;
   retryTransfer: (id: string) => void;
   downloadFile: (transferId: string, fileIndex: number, filename: string) => void;
@@ -279,6 +280,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               files: [{ name: sharedFile.name, size: sharedFile.size }],
               status: 'completed',
               createdAt: Date.now(),
+            }, ...prev]);
+          },
+          onTextReceived: (msg: SupabaseSharedText) => {
+            console.log('Successfully received shared text message:', msg);
+            const incoming: ActiveTransfer = {
+              id: `text-${msg.id}`,
+              transferId: msg.id,
+              files: [],
+              fileInfos: [],
+              receiverId: savedId,
+              status: 'completed',
+              progress: 100,
+              speed: 0,
+              eta: 0,
+              direction: 'receive',
+              senderName: msg.senderName,
+              transferType: 'text',
+              textContent: msg.text,
+            };
+            setActiveTransfers((prev) => [incoming, ...prev]);
+            setTransferHistory((prev) => [{
+              id: msg.id,
+              files: [{ name: 'Text Message', size: msg.text.length }],
+              status: 'completed',
+              createdAt: Date.now(),
+              transferType: 'text',
+              textContent: msg.text,
             }, ...prev]);
           },
         });
@@ -967,6 +995,46 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setPairingStatus('idle');
   }, [myDevice, pairedDevice]);
 
+  const sendText = useCallback(async (text: string, receiverId?: string) => {
+    if (!text.trim()) return;
+    const target = receiverId || pairedDevice?.id || 'all';
+    const sender = myDevice || ({
+      id: deviceId || 'sender',
+      name: localStorage.getItem('sharex_device_name') || 'Device',
+      type: getClientType(),
+      os: getClientOS(),
+      approved: true,
+      pairedAt: 0,
+      lastSeen: 0,
+    } as Device);
+
+    const localTransfer: ActiveTransfer = {
+      id: `text-send-${Date.now()}`,
+      transferId: `trans-text-${Date.now()}`,
+      files: [],
+      fileInfos: [],
+      receiverId: target,
+      status: 'completed',
+      progress: 100,
+      speed: 0,
+      eta: 0,
+      direction: 'send',
+      transferType: 'text',
+      textContent: text,
+      senderName: sender.name,
+    };
+    setActiveTransfers((prev) => [localTransfer, ...prev]);
+    await supabaseService.shareText(text, sender, target);
+    setTransferHistory((prev) => [{
+      id: localTransfer.id,
+      files: [{ name: 'Text Message', size: text.length }],
+      status: 'completed',
+      createdAt: Date.now(),
+      transferType: 'text',
+      textContent: text,
+    }, ...prev]);
+  }, [myDevice, pairedDevice, deviceId]);
+
   const value: AppState = {
     isConnected,
     deviceId,
@@ -1001,6 +1069,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     pollPairStatus,
     approveDeviceRequest,
     sendFiles,
+    sendText,
     cancelTransfer,
     retryTransfer,
     downloadFile,

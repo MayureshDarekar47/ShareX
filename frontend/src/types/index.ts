@@ -99,4 +99,6 @@ export interface ActiveTransfer {
   downloadUrls?: string[];
   direction: 'send' | 'receive';
   senderName?: string;
+  transferType?: 'file' | 'text';
+  textContent?: string;
 }
