@@ -1005,7 +1005,12 @@ function ConnectDeviceCard() {
   return (
     <div className="card">
       <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-        <span className="card-title">📱 Connect Another Device</span>
+        <div>
+          <span className="card-title">🌐 Connect Longer Distance Devices</span>
+          <div className="fs-xs text-muted" style={{ marginTop: '0.2rem' }}>
+            For distant devices on mobile data or different Wi-Fi networks
+          </div>
+        </div>
         <button
           className="btn btn-ghost btn-sm"
           onClick={copyLink}
@@ -1016,6 +1021,22 @@ function ConnectDeviceCard() {
       </div>
 
       <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center' }}>
+        {/* Notice for longer distance */}
+        <div
+          style={{
+            width: '100%',
+            padding: '0.65rem 0.85rem',
+            background: 'rgba(99, 102, 241, 0.1)',
+            border: '1px solid rgba(99, 102, 241, 0.25)',
+            borderRadius: '8px',
+            fontSize: '0.82rem',
+            lineHeight: 1.45,
+            color: 'var(--text-secondary)',
+          }}
+        >
+          📍 <strong>Notice:</strong> Same Wi-Fi wale devices upar radar me automatically online dikhte hain. Ye <strong>QR Code &amp; 6-Digit PIN</strong> sirf un <strong>Longer Distance</strong> devices ke liye hai jo dur hain ya alag network par hain!
+        </div>
+
         {/* Instant QR Code */}
         <div style={{ textAlign: 'center' }}>
           <div
@@ -1034,8 +1055,8 @@ function ConnectDeviceCard() {
               style={{ width: 130, height: 130, display: 'block', borderRadius: '6px' }}
             />
           </div>
-          <p className="fs-xs text-muted" style={{ margin: '0.5rem 0 0', maxWidth: 260 }}>
-            Scan with phone camera or open <strong>{window.location.host}</strong> on another phone or PC.
+          <p className="fs-xs text-muted" style={{ margin: '0.5rem 0 0', maxWidth: 280 }}>
+            Scan with longer distance device camera or open <strong>{window.location.host}</strong>
           </p>
         </div>
 
@@ -1051,13 +1072,13 @@ function ConnectDeviceCard() {
           }}
         >
           <div className="fs-xs text-muted" style={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Your Device PIN Code
+            Your Device PIN (For Longer Distance)
           </div>
           <div style={{ fontSize: '1.4rem', fontWeight: 800, letterSpacing: '0.2em', color: 'var(--primary, #818cf8)', margin: '0.2rem 0' }}>
             {displayPin}
           </div>
           <div className="fs-xs text-muted">
-            Share this PIN with distant or cellular devices to connect
+            Share this PIN with longer distance devices to connect across networks
           </div>
 
           <form onSubmit={handleConnectByPin} style={{ display: 'flex', gap: '0.4rem', marginTop: '0.75rem' }}>
