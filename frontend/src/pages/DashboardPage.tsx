@@ -1001,7 +1001,7 @@ function ConnectDeviceCard() {
   const [remotePin, setRemotePin] = useState('');
   const [connecting, setConnecting] = useState(false);
 
-  const siteUrl = window.location.origin;
+  const siteUrl = `${window.location.origin}/?v=3`;
   const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(siteUrl)}`;
 
   // 6-digit PIN for this device
