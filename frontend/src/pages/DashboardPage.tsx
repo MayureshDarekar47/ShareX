@@ -427,22 +427,20 @@ function SendPanel() {
 
   return (
     <div className="card">
-      <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
         <span className="card-title">📤 Send</span>
-        <div style={{ display: 'flex', gap: '0.35rem' }}>
+        <div className="mode-pill-group">
           <button
             type="button"
-            className={`btn btn-sm ${sendMode === 'files' ? 'btn-primary' : 'btn-ghost'}`}
+            className={`mode-pill ${sendMode === 'files' ? 'active' : ''}`}
             onClick={() => setSendMode('files')}
-            style={{ fontSize: '0.8rem', padding: '0.25rem 0.65rem' }}
           >
             📁 Files
           </button>
           <button
             type="button"
-            className={`btn btn-sm ${sendMode === 'text' ? 'btn-primary' : 'btn-ghost'}`}
+            className={`mode-pill ${sendMode === 'text' ? 'active' : ''}`}
             onClick={() => setSendMode('text')}
-            style={{ fontSize: '0.8rem', padding: '0.25rem 0.65rem' }}
           >
             💬 Text / Link
           </button>
@@ -451,44 +449,78 @@ function SendPanel() {
       <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         {/* Receiver selector */}
         <div className="input-group">
-          <label className="label">Send to</label>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <div
-              className={`device-card ${selectedReceiver === 'all' || selectedReceiver === 'host' ? 'selected' : ''}`}
-              onClick={() => setSelectedReceiver('all')}
-              id="receiver-all"
-              role="radio"
-              aria-checked={selectedReceiver === 'all' || selectedReceiver === 'host'}
-              tabIndex={0}
-              onKeyDown={(e) => e.key === 'Enter' && setSelectedReceiver('all')}
-            >
-              <div className="device-avatar">🌐</div>
-              <div className="device-info">
-                <div className="device-name">Everyone on Same Wi-Fi</div>
-                <div className="device-meta">Send to all nearby devices</div>
-              </div>
-              {(selectedReceiver === 'all' || selectedReceiver === 'host') && <span style={{ color: 'var(--accent-primary)' }}>✓</span>}
-            </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+            <label className="label" style={{ margin: 0, fontWeight: 600 }}>
+              Send to ({otherDevices.length > 0 ? `${otherDevices.length} online` : 'Searching...'})
+            </label>
+          </div>
 
-            {otherDevices.map((d) => (
-              <div
-                key={d.id}
-                className={`device-card ${selectedReceiver === d.id ? 'selected' : ''}`}
-                onClick={() => setSelectedReceiver(d.id)}
-                id={`receiver-${d.id}`}
-                role="radio"
-                aria-checked={selectedReceiver === d.id}
-                tabIndex={0}
-                onKeyDown={(e) => e.key === 'Enter' && setSelectedReceiver(d.id)}
-              >
-                <div className="device-avatar">{getDeviceEmoji(d.os)}</div>
-                <div className="device-info">
-                  <div className="device-name">{d.name}</div>
-                  <div className="device-meta">{d.os} · {d.type} {pairedDevice?.id === d.id ? '· ✓ Paired' : ''}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {otherDevices.length === 0 ? (
+              <div className="radar-box">
+                <div className="radar-ring">📡</div>
+                <div style={{ fontWeight: 600, fontSize: '0.92rem' }}>Looking for nearby devices...</div>
+                <div className="fs-xs text-muted" style={{ maxWidth: 320, lineHeight: 1.4 }}>
+                  Open <strong>{window.location.host}</strong> on your other phone or laptop on the same Wi-Fi / LAN to connect.
                 </div>
-                {selectedReceiver === d.id && <span style={{ color: 'var(--accent-primary)' }}>✓</span>}
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(window.location.origin).catch(() => {});
+                    addToast('success', 'Website link copied to clipboard!');
+                  }}
+                  style={{ border: '1px solid var(--border-default)', borderRadius: 20, marginTop: '0.25rem', fontSize: '0.78rem' }}
+                >
+                  📋 Copy Website Link to Share
+                </button>
               </div>
-            ))}
+            ) : (
+              <>
+                {otherDevices.map((d) => (
+                  <div
+                    key={d.id}
+                    className={`device-card ${selectedReceiver === d.id ? 'selected' : ''}`}
+                    onClick={() => setSelectedReceiver(d.id)}
+                    id={`receiver-${d.id}`}
+                    role="radio"
+                    aria-checked={selectedReceiver === d.id}
+                    tabIndex={0}
+                    onKeyDown={(e) => e.key === 'Enter' && setSelectedReceiver(d.id)}
+                  >
+                    <div className="device-avatar">{getDeviceEmoji(d.os)}</div>
+                    <div className="device-info">
+                      <div className="device-name" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <span>{d.name}</span>
+                        <span className="status-dot connected" style={{ width: 8, height: 8 }} title="Online now" />
+                      </div>
+                      <div className="device-meta">
+                        {d.os} · {d.type} {pairedDevice?.id === d.id ? '· ✓ Paired' : '· Ready (Direct P2P)'}
+                      </div>
+                    </div>
+                    {selectedReceiver === d.id && <span style={{ color: 'var(--accent-primary)', fontWeight: 700 }}>✓</span>}
+                  </div>
+                ))}
+
+                <div
+                  className={`device-card ${selectedReceiver === 'all' ? 'selected' : ''}`}
+                  onClick={() => setSelectedReceiver('all')}
+                  id="receiver-all"
+                  role="radio"
+                  aria-checked={selectedReceiver === 'all'}
+                  tabIndex={0}
+                  onKeyDown={(e) => e.key === 'Enter' && setSelectedReceiver('all')}
+                  style={{ opacity: 0.85 }}
+                >
+                  <div className="device-avatar" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>🌐</div>
+                  <div className="device-info">
+                    <div className="device-name">Everyone (Broadcast)</div>
+                    <div className="device-meta">Send to all online devices simultaneously</div>
+                  </div>
+                  {selectedReceiver === 'all' && <span style={{ color: 'var(--accent-primary)', fontWeight: 700 }}>✓</span>}
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -916,6 +948,132 @@ function HistoryPanel() {
   );
 }
 
+// ── Connect Other Devices Card (Instant QR & Remote PIN) ──
+function ConnectDeviceCard() {
+  const { hostPin, myDevice, submitPin } = useApp();
+  const { addToast } = useContext(ToastContext);
+  const [copied, setCopied] = useState(false);
+  const [remotePin, setRemotePin] = useState('');
+  const [connecting, setConnecting] = useState(false);
+
+  const siteUrl = window.location.origin;
+  const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(siteUrl)}`;
+
+  // 6-digit PIN for this device
+  const displayPin = hostPin || (myDevice?.id ? String(Math.abs(myDevice.id.split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0)) % 900000 + 100000) : '749203');
+
+  const copyLink = async () => {
+    await navigator.clipboard.writeText(siteUrl).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+    addToast('success', 'Link copied to clipboard!');
+  };
+
+  const handleConnectByPin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const pin = remotePin.trim().replace(/\s/g, '');
+    if (pin.length !== 6) {
+      addToast('error', 'Enter a valid 6-digit PIN');
+      return;
+    }
+    setConnecting(true);
+    try {
+      const res = await submitPin(pin);
+      if (res.success) {
+        addToast('success', 'Connected to remote device!');
+        setRemotePin('');
+      } else {
+        addToast('error', res.error || 'Failed to connect. Check PIN.');
+      }
+    } catch (err: any) {
+      addToast('error', err.message || 'Connection failed');
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  return (
+    <div className="card">
+      <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <span className="card-title">📱 Connect Another Device</span>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={copyLink}
+          style={{ fontSize: '0.78rem', padding: '0.25rem 0.6rem' }}
+        >
+          {copied ? '✓ Copied' : '📋 Copy Link'}
+        </button>
+      </div>
+
+      <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center' }}>
+        {/* Instant QR Code */}
+        <div style={{ textAlign: 'center' }}>
+          <div
+            style={{
+              padding: '0.5rem',
+              background: '#fff',
+              borderRadius: '12px',
+              boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
+              display: 'inline-block',
+              margin: '0 auto',
+            }}
+          >
+            <img
+              src={qrImgUrl}
+              alt="Scan QR to open ShareX"
+              style={{ width: 130, height: 130, display: 'block', borderRadius: '6px' }}
+            />
+          </div>
+          <p className="fs-xs text-muted" style={{ margin: '0.5rem 0 0', maxWidth: 260 }}>
+            Scan with phone camera or open <strong>{window.location.host}</strong> on another phone or PC.
+          </p>
+        </div>
+
+        {/* 6-Digit PIN Display & Remote Connect */}
+        <div
+          style={{
+            width: '100%',
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: '10px',
+            padding: '0.85rem',
+            textAlign: 'center',
+          }}
+        >
+          <div className="fs-xs text-muted" style={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Your Device PIN Code
+          </div>
+          <div style={{ fontSize: '1.4rem', fontWeight: 800, letterSpacing: '0.2em', color: 'var(--primary, #818cf8)', margin: '0.2rem 0' }}>
+            {displayPin}
+          </div>
+          <div className="fs-xs text-muted">
+            Share this PIN with distant or cellular devices to connect
+          </div>
+
+          <form onSubmit={handleConnectByPin} style={{ display: 'flex', gap: '0.4rem', marginTop: '0.75rem' }}>
+            <input
+              className="input"
+              value={remotePin}
+              onChange={(e) => setRemotePin(e.target.value)}
+              placeholder="Enter 6-digit PIN"
+              maxLength={6}
+              style={{ padding: '0.4rem 0.6rem', fontSize: '0.85rem', textAlign: 'center', fontFamily: 'var(--font-mono)' }}
+            />
+            <button
+              type="submit"
+              className="btn btn-primary btn-sm"
+              disabled={connecting || remotePin.trim().length !== 6}
+              style={{ whiteSpace: 'nowrap' }}
+            >
+              {connecting ? '...' : 'Connect'}
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const {
     hostInfo, qrCode, qrUrl, myDevice, isHost, hostPin, pendingDevices, approveDeviceRequest,
@@ -1135,61 +1293,8 @@ export default function DashboardPage() {
           <div className="dashboard-col">
             <TransfersPanel onPreviewImage={setPreviewImage} />
 
-            {/* Quick connect card */}
-            {(isHost || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && (
-              <div className="card">
-                <div className="card-header">
-                  <span className="card-title">📱 Connect Other Devices</span>
-                </div>
-                <div className="card-body">
-                  <div className="qr-container">
-                    {qrCode ? (
-                      <img src={qrCode} alt="QR code to connect devices" className="qr-image" />
-                    ) : (
-                      <div className="loading-overlay"><div className="spinner" /></div>
-                    )}
-                    {qrUrl && (
-                      <button
-                        id="copy-qr-url-btn"
-                        className={`qr-url copy-btn ${copied ? 'copied' : ''}`}
-                        onClick={() => copyUrl(qrUrl)}
-                        title="Click to copy"
-                      >
-                        {qrUrl} {copied ? '✓' : '📋'}
-                      </button>
-                    )}
-                    <p className="text-muted fs-xs text-center">
-                      Scan with phone camera or open URL in mobile browser
-                    </p>
-                  </div>
-
-                  {hostPin && (
-                    <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: 'rgba(99, 102, 241, 0.1)', borderRadius: 8, border: '1px solid rgba(99, 102, 241, 0.3)', textAlign: 'center' }}>
-                      <div className="fs-xs text-muted" style={{ textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
-                        Pairing PIN
-                      </div>
-                      <div style={{ fontSize: '1.5rem', fontWeight: 700, letterSpacing: '0.2em', color: 'var(--primary, #818cf8)', margin: '0.25rem 0' }}>
-                        {hostPin}
-                      </div>
-                      <div className="fs-xs text-muted">
-                        Connecting devices enter this 6-digit PIN to pair
-                      </div>
-                    </div>
-                  )}
-
-                  {hostInfo?.addresses && (
-                    <div className="address-list mt-2">
-                      {hostInfo.addresses.slice(0, 3).map((addr, i) => (
-                        <div key={addr} className="address-item">
-                          <span className="address-url">{addr}</span>
-                          {i === 0 && <span className="address-badge">Primary</span>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+            {/* Instant connect & QR card */}
+            <ConnectDeviceCard />
           </div>
         </div>
       )}

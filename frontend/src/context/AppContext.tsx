@@ -3,6 +3,7 @@ import { Device, HostInfo, ActiveTransfer, TransferStatus, DeviceOS, DeviceType 
 import { api } from '../api/client';
 import { wsClient, useWebSocket } from '../api/websocket';
 import { supabaseService, SupabaseSharedFile } from '../services/supabaseService';
+import { webrtcService } from '../services/webrtcService';
 
 interface AppState {
   // Auth state
@@ -216,6 +217,63 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setSessionToken(token);
       setIsConnected(true);
 
+      webrtcService.init(currentDev, {
+        onTransferProgress: (p: any) => {
+          setActiveTransfers((prev) =>
+            prev.map((t) =>
+              t.transferId === p.transferId
+                ? { ...t, progress: Math.min(100, Math.round((p.bytesTransferred / p.totalBytes) * 100)), speed: p.speed }
+                : t
+            )
+          );
+        },
+        onFileReceived: (f: any) => {
+          const incoming: ActiveTransfer = {
+            id: `p2p-${Date.now()}`,
+            transferId: `p2p-${Date.now()}`,
+            files: [],
+            fileInfos: [{ name: f.name, size: f.size, mimeType: 'application/octet-stream' }],
+            receiverId: savedId,
+            status: 'completed',
+            progress: 100,
+            speed: 0,
+            eta: 0,
+            direction: 'receive',
+            senderName: f.senderName,
+            downloadUrls: [f.url],
+          };
+          setActiveTransfers((prev) => [incoming, ...prev]);
+          try {
+            const a = document.createElement('a');
+            a.href = f.url;
+            a.download = f.name;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+              try { document.body.removeChild(a); } catch { }
+            }, 1000);
+          } catch { }
+        },
+        onTextReceived: (text: string, sender: string) => {
+          const incoming: ActiveTransfer = {
+            id: `text-${Date.now()}`,
+            transferId: `text-${Date.now()}`,
+            files: [],
+            fileInfos: [],
+            receiverId: savedId,
+            status: 'completed',
+            progress: 100,
+            speed: 0,
+            eta: 0,
+            direction: 'receive',
+            senderName: sender,
+            transferType: 'text',
+            textContent: text,
+          };
+          setActiveTransfers((prev) => [incoming, ...prev]);
+        },
+      });
+
       supabaseService.getNetworkId().then((netId) => {
         supabaseService.joinNetworkLobby(netId, currentDev, {
           onDevicesChange: (onlineList) => {
@@ -240,6 +298,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           onDisconnect: () => {
             setPairedDevice(null);
             setPairingStatus('idle');
+          },
+          onWebRTCSignal: (sigData: any) => {
+            webrtcService.handleSignalingMessage(sigData);
           },
           onTextReceived: (msg: { text: string; sender: Device }) => {
             const incoming: ActiveTransfer = {
@@ -740,6 +801,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         };
         setActiveTransfers((prev) => [localTransfer, ...prev]);
 
+        // 1. Try Direct P2P Transfer (Full Wi-Fi LAN speed, unlimited file size)
+        let p2pSuccess = false;
+        if (receiverId !== 'all') {
+          p2pSuccess = await webrtcService.sendFileP2P(file, receiverId, (prog, speed) => {
+            setActiveTransfers((prev) =>
+              prev.map((t) => t.id === localTransfer.id ? { ...t, progress: prog, speed } : t)
+            );
+          });
+        }
+
+        if (p2pSuccess) {
+          setActiveTransfers((prev) =>
+            prev.map((t) => t.id === localTransfer.id ? { ...t, status: 'completed', progress: 100 } : t)
+          );
+          setTransferHistory((prev) => [{
+            id: localTransfer.id,
+            files: [{ name: file.name, size: file.size }],
+            status: 'completed',
+            createdAt: Date.now(),
+          }, ...prev]);
+          continue;
+        }
+
+        // 2. Cloud Fallback via Supabase
         const sender = myDevice || ({ id: deviceId || 'sender', name: 'Device', type: 'mobile', os: 'unknown', approved: true, pairedAt: 0, lastSeen: 0 } as Device);
         const res = await supabaseService.shareFile(file, sender, receiverId);
         if (res.success && res.fileInfo) {

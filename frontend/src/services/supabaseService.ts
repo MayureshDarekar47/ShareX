@@ -44,6 +44,7 @@ export class SupabaseService {
       onConnectRequest?: (fromDevice: Device) => void;
       onConnectResponse?: (fromDevice: Device, accepted: boolean) => void;
       onDisconnect?: () => void;
+      onWebRTCSignal?: (data: any) => void;
     }
   ) {
     if (this.networkChannel) {
@@ -102,6 +103,10 @@ export class SupabaseService {
           }
         }
       })
+      .on('broadcast', { event: 'webrtc_signal' }, (payload: any) => {
+        const data = payload?.payload || payload;
+        callbacks.onWebRTCSignal?.(data);
+      })
       .on('broadcast', { event: 'file_sent' }, (payload: any) => {
         const data = payload?.payload || payload;
         const file: SupabaseSharedFile = data?.file || data;
@@ -152,6 +157,21 @@ export class SupabaseService {
     }
 
     return { success: true };
+  }
+
+  async sendWebRTCSignal(signalData: {
+    type: 'offer' | 'answer' | 'candidate';
+    fromDeviceId: string;
+    toDeviceId: string;
+    data: any;
+  }) {
+    if (this.networkChannel) {
+      await this.networkChannel.send({
+        type: 'broadcast',
+        event: 'webrtc_signal',
+        payload: signalData,
+      });
+    }
   }
 
   async sendConnectRequest(fromDev: Device, toDeviceId: string) {
