@@ -22,6 +22,11 @@ export default function PairingPage() {
   const [isHostMode, setIsHostMode] = useState(false);
 
   useEffect(() => {
+    // If on web / Vercel (not local backend), immediately redirect to main app
+    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      window.location.replace('/');
+      return;
+    }
     // If on same machine as server, offer host mode
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
       setIsHostMode(true);
