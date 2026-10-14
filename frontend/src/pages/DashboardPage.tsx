@@ -186,8 +186,25 @@ function TransferCard({
 
     const isUrl = transfer.textContent?.startsWith('http://') || transfer.textContent?.startsWith('https://');
 
+    const isWaiting = transfer.status === 'waiting_approval';
+    const isFailed = transfer.status === 'failed';
+
     return (
-      <div className="transfer-card completed" style={{ borderLeft: '4px solid #8b5cf6', background: 'rgba(139, 92, 246, 0.05)' }}>
+      <div
+        className={`transfer-card ${transfer.status}`}
+        style={{
+          borderLeft: isFailed
+            ? '4px solid #ef4444'
+            : isWaiting
+            ? '4px solid #eab308'
+            : '4px solid #8b5cf6',
+          background: isFailed
+            ? 'rgba(239, 68, 68, 0.05)'
+            : isWaiting
+            ? 'rgba(234, 179, 8, 0.05)'
+            : 'rgba(139, 92, 246, 0.05)',
+        }}
+      >
         <div className="transfer-header">
           <div>
             <div className="transfer-files" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
@@ -196,46 +213,64 @@ function TransferCard({
             <div className="transfer-size">
               {transfer.direction === 'receive'
                 ? <>From: <strong>{transfer.senderName || 'Peer'}</strong></>
-                : <>Sent to peer</>}
+                : <>To: peer</>}
             </div>
           </div>
-          <span className="transfer-status-badge badge-completed">
-            {transfer.direction === 'receive' ? '✓ Received' : '↑ Sent'}
+          <span className={`transfer-status-badge ${getStatusBadgeClass(transfer.status)}`}>
+            {getStatusLabel(transfer.status)}
           </span>
         </div>
 
-        <div
-          style={{
-            margin: '0.6rem 0',
-            padding: '0.75rem',
-            background: 'rgba(0,0,0,0.25)',
-            borderRadius: '8px',
-            fontSize: '0.9rem',
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-            fontFamily: 'inherit',
-            lineHeight: 1.5,
-          }}
-        >
-          {transfer.textContent}
-        </div>
+        {isWaiting && (
+          <div style={{ margin: '0.5rem 0', padding: '0.5rem 0.75rem', background: 'rgba(234, 179, 8, 0.12)', border: '1px solid rgba(234, 179, 8, 0.4)', borderRadius: '6px', fontSize: '0.82rem', color: '#facc15', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />
+            <span>Waiting for receiver to approve message on their device...</span>
+          </div>
+        )}
 
-        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.4rem' }}>
-          <button className="btn btn-secondary btn-sm" onClick={handleCopy} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-            <span>📋</span> Copy Text
-          </button>
-          {isUrl && (
-            <a
-              href={transfer.textContent}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn btn-ghost btn-sm"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
-            >
-              <span>🔗</span> Open Link
-            </a>
-          )}
-        </div>
+        {isFailed && (
+          <div style={{ margin: '0.5rem 0', padding: '0.4rem 0.6rem', background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '6px', fontSize: '0.8rem', color: '#f87171' }}>
+            ✕ {transfer.error || 'Message declined by receiver'}
+          </div>
+        )}
+
+        {transfer.textContent && (
+          <div
+            style={{
+              margin: '0.6rem 0',
+              padding: '0.75rem',
+              background: 'rgba(0,0,0,0.25)',
+              borderRadius: '8px',
+              fontSize: '0.9rem',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              fontFamily: 'inherit',
+              lineHeight: 1.5,
+              opacity: isWaiting ? 0.7 : 1,
+            }}
+          >
+            {transfer.textContent}
+          </div>
+        )}
+
+        {!isWaiting && !isFailed && (
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.4rem' }}>
+            <button className="btn btn-secondary btn-sm" onClick={handleCopy} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <span>📋</span> Copy Text
+            </button>
+            {isUrl && (
+              <a
+                href={transfer.textContent}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-ghost btn-sm"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+              >
+                <span>🔗</span> Open Link
+              </a>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -1231,13 +1266,32 @@ export default function DashboardPage() {
               </div>
               <div>
                 <div style={{ fontWeight: 700, fontSize: '1.15rem', color: '#fff' }}>
-                  📥 File Transfer Request from "{incomingTransferRequest.fromDevice.name}"
+                  {incomingTransferRequest.transferType === 'text' ? '💬 Message Request' : '📥 File Transfer Request'} from "{incomingTransferRequest.fromDevice.name}"
                 </div>
                 <div style={{ fontSize: '0.88rem', color: 'var(--text-secondary)' }}>
-                  Wants to send {incomingTransferRequest.transferType === 'text'
-                    ? 'a message / note'
-                    : `${incomingTransferRequest.files.length} file(s) (${formatBytes(incomingTransferRequest.totalSize)})`}
+                  {incomingTransferRequest.transferType === 'text'
+                    ? 'Wants to send you a text message / link'
+                    : `Wants to send ${incomingTransferRequest.files.length} file(s) (${formatBytes(incomingTransferRequest.totalSize)})`}
                 </div>
+                {incomingTransferRequest.transferType === 'text' && incomingTransferRequest.textContent && (
+                  <div
+                    className="fs-xs"
+                    style={{
+                      marginTop: '0.35rem',
+                      padding: '0.35rem 0.65rem',
+                      background: 'rgba(0,0,0,0.3)',
+                      borderRadius: '6px',
+                      fontStyle: 'italic',
+                      color: 'var(--text-muted, #94a3b8)',
+                      maxWidth: 380,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    "{incomingTransferRequest.textContent}"
+                  </div>
+                )}
                 {incomingTransferRequest.files.length > 0 && (
                   <div className="fs-xs text-muted" style={{ marginTop: '0.2rem' }}>
                     {incomingTransferRequest.files.slice(0, 3).map((f: any) => f.name).join(', ')}
@@ -1252,8 +1306,9 @@ export default function DashboardPage() {
                 id="accept-transfer-btn"
                 className="btn btn-primary"
                 onClick={() => {
+                  const isTxt = incomingTransferRequest.transferType === 'text';
                   respondToTransferRequest(true);
-                  addToast('success', 'Transfer accepted! Receiving files...');
+                  addToast('success', isTxt ? 'Message accepted!' : 'Transfer accepted! Receiving files...');
                 }}
                 style={{ padding: '0.6rem 1.4rem', fontWeight: 700 }}
               >

@@ -320,24 +320,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           onWebRTCSignal: (sigData: any) => {
             webrtcService.handleSignalingMessage(sigData);
           },
-          onTextReceived: (msg: { text: string; sender: Device }) => {
-            const incoming: ActiveTransfer = {
-              id: `text-${Date.now()}`,
-              transferId: `text-${Date.now()}`,
-              files: [],
-              fileInfos: [],
-              receiverId: savedId,
-              status: 'completed',
-              progress: 100,
-              speed: 0,
-              eta: 0,
-              direction: 'receive',
-              senderName: msg.sender.name,
-              transferType: 'text',
-              textContent: msg.text,
-            };
-            setActiveTransfers((prev) => [incoming, ...prev]);
-          },
           onFileReceived: (sharedFile: SupabaseSharedFile) => {
             console.log('Successfully received shared file:', sharedFile);
             try {
@@ -1151,14 +1133,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     );
 
     if (approved) {
+      const isText = incomingTransferRequest.transferType === 'text';
       const incoming: ActiveTransfer = {
         id: `inc-${incomingTransferRequest.transferId}`,
         transferId: incomingTransferRequest.transferId,
         files: [],
         fileInfos: incomingTransferRequest.files,
         receiverId: current.id,
-        status: 'approved',
-        progress: 0,
+        status: isText ? 'completed' : 'approved',
+        progress: isText ? 100 : 0,
         speed: 0,
         eta: 0,
         direction: 'receive',
@@ -1176,23 +1159,60 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const current = myDevRef.current;
     if (!current || !text.trim()) return;
 
-    await supabaseService.shareText(current, text.trim(), receiverId);
+    if (!receiverId || receiverId === 'all') {
+      throw new Error('Please select an online device to send message to');
+    }
 
-    const outTransfer: ActiveTransfer = {
-      id: `text-${Date.now()}`,
-      transferId: `text-${Date.now()}`,
+    const transferId = `text-${Date.now()}`;
+
+    // 1. Add local transfer in waiting_approval state
+    const localTransfer: ActiveTransfer = {
+      id: `send-${transferId}`,
+      transferId,
       files: [],
       fileInfos: [],
-      receiverId: receiverId || 'all',
-      status: 'completed',
-      progress: 100,
+      receiverId,
+      status: 'waiting_approval',
+      progress: 0,
       speed: 0,
       eta: 0,
       direction: 'send',
       transferType: 'text',
       textContent: text.trim(),
     };
-    setActiveTransfers((prev) => [outTransfer, ...prev]);
+    setActiveTransfers((prev) => [localTransfer, ...prev]);
+
+    // 2. Send transfer permission request to receiver
+    await supabaseService.requestTransfer(current, receiverId, {
+      transferId,
+      files: [],
+      totalSize: text.length,
+      transferType: 'text',
+      textContent: text.trim(),
+    });
+
+    // 3. Wait up to 45 seconds for receiver to approve or decline
+    const approved = await new Promise<boolean>((resolve) => {
+      pendingApprovalResolvers.current.set(transferId, resolve);
+      setTimeout(() => {
+        if (pendingApprovalResolvers.current.has(transferId)) {
+          pendingApprovalResolvers.current.delete(transferId);
+          resolve(false);
+        }
+      }, 45000);
+    });
+
+    if (!approved) {
+      setActiveTransfers((prev) =>
+        prev.map((t) => t.transferId === transferId ? { ...t, status: 'failed', error: 'Message declined by receiver' } : t)
+      );
+      throw new Error('Message was declined by receiver');
+    }
+
+    // Receiver approved! Update status to completed
+    setActiveTransfers((prev) =>
+      prev.map((t) => t.transferId === transferId ? { ...t, status: 'completed', progress: 100 } : t)
+    );
   }, []);
 
   const value: AppState = {
