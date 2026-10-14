@@ -157,9 +157,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [transferHistory, setTransferHistory] = useState<any[]>([]);
   const [theme, setTheme] = useState<'dark' | 'light'>(getStoredTheme);
 
-  // Bluetooth style pairing state: ask for name every fresh session/tab
+  // Ask for name only once — remembered in localStorage across sessions
   const [isNameConfirmed, setIsNameConfirmed] = useState<boolean>(
-    () => sessionStorage.getItem('sharex_name_confirmed') === 'true'
+    () => {
+      // Confirmed if we have a stored name already
+      const hasStoredName = !!localStorage.getItem('sharex_device_name');
+      const flagged = localStorage.getItem('sharex_name_confirmed') === 'true';
+      return hasStoredName && flagged;
+    }
   );
   const [pairedDevice, setPairedDevice] = useState<Device | null>(null);
   const [pairingWithDevice, setPairingWithDevice] = useState<Device | null>(null);
@@ -234,9 +239,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           );
         },
         onFileReceived: (f: any) => {
+          // File received via P2P after approval — show in panel with Save button only
+          const tid = `p2p-${Date.now()}`;
           const incoming: ActiveTransfer = {
-            id: `p2p-${Date.now()}`,
-            transferId: `p2p-${Date.now()}`,
+            id: tid,
+            transferId: tid,
             files: [],
             fileInfos: [{ name: f.name, size: f.size, mimeType: 'application/octet-stream' }],
             receiverId: savedId,
@@ -249,34 +256,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             downloadUrls: [f.url],
           };
           setActiveTransfers((prev) => [incoming, ...prev]);
-          try {
-            const a = document.createElement('a');
-            a.href = f.url;
-            a.download = f.name;
-            document.body.appendChild(a);
-            a.click();
-            setTimeout(() => {
-              try { document.body.removeChild(a); } catch { }
-            }, 1000);
-          } catch { }
+          // No auto-download — user must press Save button
         },
-        onTextReceived: (text: string, sender: string) => {
-          const incoming: ActiveTransfer = {
-            id: `text-${Date.now()}`,
-            transferId: `text-${Date.now()}`,
-            files: [],
-            fileInfos: [],
-            receiverId: savedId,
-            status: 'completed',
-            progress: 100,
-            speed: 0,
-            eta: 0,
-            direction: 'receive',
-            senderName: sender,
-            transferType: 'text',
-            textContent: text,
-          };
-          setActiveTransfers((prev) => [incoming, ...prev]);
+        onTextReceived: (_text: string, _sender: string) => {
+          // Text received via P2P — ignored here; approval flow via transfer_request handles it
         },
       });
 
@@ -321,21 +304,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             webrtcService.handleSignalingMessage(sigData);
           },
           onFileReceived: (sharedFile: SupabaseSharedFile) => {
-            console.log('Successfully received shared file:', sharedFile);
-            try {
-              const a = document.createElement('a');
-              a.href = sharedFile.url;
-              a.download = sharedFile.name;
-              a.target = '_blank';
-              document.body.appendChild(a);
-              a.click();
-              setTimeout(() => {
-                try { document.body.removeChild(a); } catch { }
-              }, 1000);
-            } catch (err) {
-              console.warn('Auto download error:', err);
-            }
-
+            console.log('File received (approved transfer):', sharedFile);
+            // Show in transfer panel with Save button — no auto-download
             const incoming: ActiveTransfer = {
               id: `supabase-${sharedFile.id}`,
               transferId: sharedFile.id,
@@ -603,6 +573,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         });
       },
       onFileReceived: (sharedFile: SupabaseSharedFile) => {
+        // Show in panel — no auto-download
         const incoming: ActiveTransfer = {
           id: `supabase-${sharedFile.id}`,
           transferId: sharedFile.id,
@@ -671,6 +642,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setIsConnected(false);
       },
       onFileReceived: (sharedFile: SupabaseSharedFile) => {
+        // Show in panel — no auto-download
         const incoming: ActiveTransfer = {
           id: `supabase-${sharedFile.id}`,
           transferId: sharedFile.id,
@@ -975,11 +947,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         );
         return;
       }
-      const transfer = activeTransfers.find((t) => t.transferId === transferId);
-      if (transfer?.status === 'approved') {
-        clearInterval(interval);
-        uploadAllFiles(transferId, files, fileInfos);
-      }
+      // Use functional update pattern to read latest state without stale closure
+      setActiveTransfers((prev) => {
+        const transfer = prev.find((t) => t.transferId === transferId);
+        if (transfer?.status === 'approved') {
+          clearInterval(interval);
+          uploadAllFiles(transferId, files, fileInfos);
+        }
+        return prev; // no mutation
+      });
     }, 500);
   }
 
@@ -1086,7 +1062,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const confirmDeviceName = useCallback((name: string) => {
     const trimmed = name.trim() || getDefaultDeviceName();
     localStorage.setItem('sharex_device_name', trimmed);
-    sessionStorage.setItem('sharex_name_confirmed', 'true');
+    localStorage.setItem('sharex_name_confirmed', 'true');
     setIsNameConfirmed(true);
     const current = myDevRef.current;
     if (current) {
