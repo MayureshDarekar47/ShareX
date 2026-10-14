@@ -261,6 +261,21 @@ function TransferCard({
         </span>
       </div>
 
+      {/* Waiting for approval indicator */}
+      {transfer.status === 'waiting_approval' && (
+        <div style={{ marginTop: '0.5rem', padding: '0.5rem 0.75rem', background: 'rgba(234, 179, 8, 0.12)', border: '1px solid rgba(234, 179, 8, 0.4)', borderRadius: '6px', fontSize: '0.82rem', color: '#facc15', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />
+          <span>Waiting for receiver to approve transfer on their device...</span>
+        </div>
+      )}
+
+      {/* Error / decline banner */}
+      {transfer.status === 'failed' && transfer.error && (
+        <div style={{ marginTop: '0.5rem', padding: '0.4rem 0.6rem', background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '6px', fontSize: '0.8rem', color: '#f87171' }}>
+          ✕ {transfer.error}
+        </div>
+      )}
+
       {/* Progress bar */}
       {['uploading', 'relaying', 'approved'].includes(transfer.status) && (
         <>
@@ -355,8 +370,9 @@ function SendPanel() {
   const { addToast } = useContext(ToastContext);
   const [sendMode, setSendMode] = useState<'files' | 'text'>('files');
   const [textMessage, setTextMessage] = useState('');
+  const otherDevices = devices.filter((d) => d.id !== myDevice?.id);
+  const [selectedReceiver, setSelectedReceiver] = useState<string>(() => pairedDevice?.id || otherDevices[0]?.id || '');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [selectedReceiver, setSelectedReceiver] = useState<string>(() => pairedDevice?.id || 'all');
   const [dragOver, setDragOver] = useState(false);
   const [sending, setSending] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -364,8 +380,10 @@ function SendPanel() {
   useEffect(() => {
     if (pairedDevice) {
       setSelectedReceiver(pairedDevice.id);
+    } else if ((!selectedReceiver || !otherDevices.some((d) => d.id === selectedReceiver)) && otherDevices.length > 0) {
+      setSelectedReceiver(otherDevices[0].id);
     }
-  }, [pairedDevice]);
+  }, [pairedDevice, otherDevices, selectedReceiver]);
 
   const totalSize = selectedFiles.reduce((s, f) => s + f.size, 0);
 
@@ -384,20 +402,32 @@ function SendPanel() {
   };
 
   const handleSendFiles = async () => {
-    if (!selectedFiles.length) { addToast('error', 'Select at least one file'); return; }
+    if (!selectedReceiver) {
+      addToast('error', 'Please select an online device first!');
+      return;
+    }
+    if (!selectedFiles.length) {
+      addToast('error', 'Select at least one file');
+      return;
+    }
     setSending(true);
+    addToast('info', 'Transfer request sent! Waiting for receiver permission...');
     try {
       await sendFiles(selectedReceiver, selectedFiles);
       setSelectedFiles([]);
-      addToast('success', 'Transfer started!');
+      addToast('success', 'Transfer completed successfully!');
     } catch (e: any) {
-      addToast('error', e.message || 'Failed to start transfer');
+      addToast('error', e.message || 'Transfer was declined or failed');
     } finally {
       setSending(false);
     }
   };
 
   const handleSendText = async () => {
+    if (!selectedReceiver) {
+      addToast('error', 'Please select an online device first!');
+      return;
+    }
     if (!textMessage.trim()) return;
     setSending(true);
     try {
@@ -422,8 +452,6 @@ function SendPanel() {
       addToast('info', 'Please press Ctrl+V to paste manually');
     }
   };
-
-  const otherDevices = devices.filter((d) => d.id !== myDevice?.id);
 
   return (
     <div className="card">
@@ -495,30 +523,12 @@ function SendPanel() {
                         <span className="status-dot connected" style={{ width: 8, height: 8 }} title="Online now" />
                       </div>
                       <div className="device-meta">
-                        {d.os} · {d.type} {pairedDevice?.id === d.id ? '· ✓ Paired' : '· Ready (Direct P2P)'}
+                        {d.os} · {d.type} {pairedDevice?.id === d.id ? '· ✓ Paired' : '· 🔒 Approval Required'}
                       </div>
                     </div>
                     {selectedReceiver === d.id && <span style={{ color: 'var(--accent-primary)', fontWeight: 700 }}>✓</span>}
                   </div>
                 ))}
-
-                <div
-                  className={`device-card ${selectedReceiver === 'all' ? 'selected' : ''}`}
-                  onClick={() => setSelectedReceiver('all')}
-                  id="receiver-all"
-                  role="radio"
-                  aria-checked={selectedReceiver === 'all'}
-                  tabIndex={0}
-                  onKeyDown={(e) => e.key === 'Enter' && setSelectedReceiver('all')}
-                  style={{ opacity: 0.85 }}
-                >
-                  <div className="device-avatar" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>🌐</div>
-                  <div className="device-info">
-                    <div className="device-name">Everyone (Broadcast)</div>
-                    <div className="device-meta">Send to all online devices simultaneously</div>
-                  </div>
-                  {selectedReceiver === 'all' && <span style={{ color: 'var(--accent-primary)', fontWeight: 700 }}>✓</span>}
-                </div>
               </>
             )}
           </div>
@@ -1062,8 +1072,7 @@ function ConnectDeviceCard() {
             <button
               type="submit"
               className="btn btn-primary btn-sm"
-              disabled={connecting || remotePin.trim().length !== 6}
-              style={{ whiteSpace: 'nowrap' }}
+              disabled={remotePin.trim().length !== 6 || connecting}
             >
               {connecting ? '...' : 'Connect'}
             </button>
@@ -1077,7 +1086,8 @@ function ConnectDeviceCard() {
 export default function DashboardPage() {
   const {
     hostInfo, qrCode, qrUrl, myDevice, isHost, hostPin, pendingDevices, approveDeviceRequest,
-    incomingConnectRequest, respondToConnectRequest, pairedDevice, disconnectDevice, openNameSetup
+    incomingConnectRequest, respondToConnectRequest, pairedDevice, disconnectDevice, openNameSetup,
+    incomingTransferRequest, respondToTransferRequest
   } = useApp();
   const { addToast } = useContext(ToastContext);
   const [activeTab, setActiveTab] = useState<'send' | 'devices' | 'history'>('send');
@@ -1130,6 +1140,7 @@ export default function DashboardPage() {
           <span>✏️</span> Change Name
         </button>
       </div>
+
       {/* Bluetooth style incoming connection request modal/banner */}
       {incomingConnectRequest && (
         <div
@@ -1173,6 +1184,68 @@ export default function DashboardPage() {
                   addToast('info', 'Connection request declined');
                 }}
                 style={{ padding: '0.55rem 1.25rem' }}
+              >
+                ✕ Decline
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Incoming File Transfer Permission Prompt (Bluetooth / AirDrop style) */}
+      {incomingTransferRequest && (
+        <div
+          className="card glow-card mb-2"
+          style={{
+            border: '2px solid var(--accent-primary)',
+            background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.22) 0%, rgba(139, 92, 246, 0.18) 100%)',
+            boxShadow: '0 8px 32px rgba(99, 102, 241, 0.35)',
+            animation: 'pulse 2s infinite',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+              <div className="device-avatar" style={{ fontSize: '2rem' }}>
+                {getDeviceEmoji(incomingTransferRequest.fromDevice.os)}
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '1.15rem', color: '#fff' }}>
+                  📥 File Transfer Request from "{incomingTransferRequest.fromDevice.name}"
+                </div>
+                <div style={{ fontSize: '0.88rem', color: 'var(--text-secondary)' }}>
+                  Wants to send {incomingTransferRequest.transferType === 'text'
+                    ? 'a message / note'
+                    : `${incomingTransferRequest.files.length} file(s) (${formatBytes(incomingTransferRequest.totalSize)})`}
+                </div>
+                {incomingTransferRequest.files.length > 0 && (
+                  <div className="fs-xs text-muted" style={{ marginTop: '0.2rem' }}>
+                    {incomingTransferRequest.files.slice(0, 3).map((f: any) => f.name).join(', ')}
+                    {incomingTransferRequest.files.length > 3 ? '...' : ''}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.65rem' }}>
+              <button
+                id="accept-transfer-btn"
+                className="btn btn-primary"
+                onClick={() => {
+                  respondToTransferRequest(true);
+                  addToast('success', 'Transfer accepted! Receiving files...');
+                }}
+                style={{ padding: '0.6rem 1.4rem', fontWeight: 700 }}
+              >
+                ✓ Accept
+              </button>
+              <button
+                id="decline-transfer-btn"
+                className="btn btn-danger"
+                onClick={() => {
+                  respondToTransferRequest(false);
+                  addToast('info', 'Transfer declined');
+                }}
+                style={{ padding: '0.6rem 1.25rem' }}
               >
                 ✕ Decline
               </button>

@@ -45,6 +45,8 @@ export class SupabaseService {
       onConnectResponse?: (fromDevice: Device, accepted: boolean) => void;
       onDisconnect?: () => void;
       onWebRTCSignal?: (data: any) => void;
+      onTransferRequest?: (data: any) => void;
+      onTransferApproval?: (data: any) => void;
     }
   ) {
     if (this.networkChannel) {
@@ -75,6 +77,20 @@ export class SupabaseService {
           }
         }
         callbacks.onDevicesChange(onlineList);
+      })
+      .on('broadcast', { event: 'transfer_request' }, (payload: any) => {
+        const data = payload?.payload || payload;
+        if (data?.toDeviceId === myDev.id || data?.toDeviceId === 'all') {
+          if (data?.fromDevice && data.fromDevice.id !== myDev.id) {
+            callbacks.onTransferRequest?.(data);
+          }
+        }
+      })
+      .on('broadcast', { event: 'transfer_approval' }, (payload: any) => {
+        const data = payload?.payload || payload;
+        if (data?.toDeviceId === myDev.id) {
+          callbacks.onTransferApproval?.(data);
+        }
       })
       .on('broadcast', { event: 'connect_request' }, (payload: any) => {
         const data = payload?.payload || payload;
@@ -170,6 +186,41 @@ export class SupabaseService {
         type: 'broadcast',
         event: 'webrtc_signal',
         payload: signalData,
+      });
+    }
+  }
+
+  async requestTransfer(fromDev: Device, toDeviceId: string, transferData: {
+    transferId: string;
+    files: any[];
+    totalSize: number;
+    transferType: 'file' | 'text';
+    textContent?: string;
+  }) {
+    if (this.networkChannel) {
+      await this.networkChannel.send({
+        type: 'broadcast',
+        event: 'transfer_request',
+        payload: {
+          fromDevice: fromDev,
+          toDeviceId,
+          ...transferData,
+        },
+      });
+    }
+  }
+
+  async respondTransfer(fromDevId: string, toDeviceId: string, transferId: string, approved: boolean) {
+    if (this.networkChannel) {
+      await this.networkChannel.send({
+        type: 'broadcast',
+        event: 'transfer_approval',
+        payload: {
+          fromDeviceId: fromDevId,
+          toDeviceId,
+          transferId,
+          approved,
+        },
       });
     }
   }

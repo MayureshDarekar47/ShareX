@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { Device, HostInfo, ActiveTransfer, TransferStatus, DeviceOS, DeviceType } from '../types';
+import { Device, HostInfo, ActiveTransfer, TransferStatus, DeviceOS, DeviceType, IncomingTransferRequest } from '../types';
 import { api } from '../api/client';
 import { wsClient, useWebSocket } from '../api/websocket';
 import { supabaseService, SupabaseSharedFile } from '../services/supabaseService';
@@ -44,6 +44,10 @@ interface AppState {
   connectToDevice: (targetDev: Device) => Promise<void>;
   respondToConnectRequest: (accept: boolean) => Promise<void>;
   disconnectDevice: () => Promise<void>;
+
+  // File Transfer Approval Handshake
+  incomingTransferRequest: IncomingTransferRequest | null;
+  respondToTransferRequest: (approved: boolean) => Promise<void>;
 
   // Actions
   createRoom: (name: string) => Promise<string>;
@@ -161,7 +165,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [pairingWithDevice, setPairingWithDevice] = useState<Device | null>(null);
   const [pairingStatus, setPairingStatus] = useState<'idle' | 'requesting' | 'connected'>('idle');
   const [incomingConnectRequest, setIncomingConnectRequest] = useState<Device | null>(null);
+  const [incomingTransferRequest, setIncomingTransferRequest] = useState<IncomingTransferRequest | null>(null);
 
+  const pendingApprovalResolvers = useRef<Map<string, (approved: boolean) => void>>(new Map());
   const deviceNameRef = useRef<string>(localStorage.getItem('sharex_device_name') || '');
   const myDevRef = useRef<Device | null>(null);
   const pairPollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -298,6 +304,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           onDisconnect: () => {
             setPairedDevice(null);
             setPairingStatus('idle');
+          },
+          onTransferRequest: (reqData: any) => {
+            console.log('Incoming transfer request from peer:', reqData);
+            setIncomingTransferRequest(reqData);
+          },
+          onTransferApproval: (apprData: any) => {
+            console.log('Transfer approval response from peer:', apprData);
+            const resolver = pendingApprovalResolvers.current.get(apprData.transferId);
+            if (resolver) {
+              resolver(apprData.approved);
+              pendingApprovalResolvers.current.delete(apprData.transferId);
+            }
           },
           onWebRTCSignal: (sigData: any) => {
             webrtcService.handleSignalingMessage(sigData);
@@ -786,37 +804,82 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const sendFiles = useCallback(async (receiverId: string, files: File[]) => {
     // Check if Supabase session is active
     if (sessionToken && sessionToken.startsWith('supabase-')) {
-      for (const file of files) {
-        const localTransfer: ActiveTransfer = {
-          id: `send-${Date.now()}`,
-          transferId: `trans-${Date.now()}`,
-          files: [file],
-          fileInfos: [{ name: file.name, size: file.size, mimeType: file.type }],
-          receiverId,
-          status: 'uploading',
-          progress: 30,
-          speed: 0,
-          eta: 0,
-          direction: 'send',
-        };
-        setActiveTransfers((prev) => [localTransfer, ...prev]);
+      const fileInfos = files.map((f) => ({
+        name: f.name,
+        size: f.size,
+        mimeType: f.type || 'application/octet-stream',
+      }));
+      const totalSize = files.reduce((s, f) => s + f.size, 0);
+      const sender = myDevice || ({ id: deviceId || 'sender', name: 'Device', type: 'mobile', os: 'unknown', approved: true, pairedAt: 0, lastSeen: 0 } as Device);
+      const transferId = `trans-${Date.now()}`;
 
-        // 1. Try Direct P2P Transfer (Full Wi-Fi LAN speed, unlimited file size)
+      if (!receiverId || receiverId === 'all') {
+        throw new Error('Please select an online device to send files to');
+      }
+
+      // 1. Mandatory Transfer Permission Handshake (Bluetooth / ShareMe style)
+      const localTransfer: ActiveTransfer = {
+        id: `send-${transferId}`,
+        transferId,
+        files,
+        fileInfos,
+        receiverId,
+        status: 'waiting_approval',
+        progress: 0,
+        speed: 0,
+        eta: 0,
+        direction: 'send',
+        transferType: 'file',
+      };
+      setActiveTransfers((prev) => [localTransfer, ...prev]);
+
+      await supabaseService.requestTransfer(sender, receiverId, {
+        transferId,
+        files: fileInfos,
+        totalSize,
+        transferType: 'file',
+      });
+
+      // Wait up to 45 seconds for receiver to approve or decline
+      const approved = await new Promise<boolean>((resolve) => {
+        pendingApprovalResolvers.current.set(transferId, resolve);
+        setTimeout(() => {
+          if (pendingApprovalResolvers.current.has(transferId)) {
+            pendingApprovalResolvers.current.delete(transferId);
+            resolve(false);
+          }
+        }, 45000);
+      });
+
+      if (!approved) {
+        setActiveTransfers((prev) =>
+          prev.map((t) => t.transferId === transferId ? { ...t, status: 'failed', error: 'Transfer declined by receiver' } : t)
+        );
+        throw new Error('Transfer was declined by receiver');
+      }
+
+      // Receiver approved! Update status to uploading
+      setActiveTransfers((prev) =>
+        prev.map((t) => t.transferId === transferId ? { ...t, status: 'uploading' } : t)
+      );
+
+      // 2. Transfer files (Direct P2P or Cloud Fallback)
+      for (const file of files) {
         let p2pSuccess = false;
         if (receiverId !== 'all') {
           p2pSuccess = await webrtcService.sendFileP2P(file, receiverId, (prog, speed) => {
             setActiveTransfers((prev) =>
-              prev.map((t) => t.id === localTransfer.id ? { ...t, progress: prog, speed } : t)
+              prev.map((t) => t.transferId === transferId ? { ...t, progress: prog, speed } : t)
             );
           });
         }
 
         if (p2pSuccess) {
           setActiveTransfers((prev) =>
-            prev.map((t) => t.id === localTransfer.id ? { ...t, status: 'completed', progress: 100 } : t)
+            prev.map((t) => t.transferId === transferId ? { ...t, status: 'completed', progress: 100 } : t)
           );
           setTransferHistory((prev) => [{
-            id: localTransfer.id,
+            id: transferId,
             files: [{ name: file.name, size: file.size }],
             status: 'completed',
             createdAt: Date.now(),
@@ -824,22 +887,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           continue;
         }
 
-        // 2. Cloud Fallback via Supabase
-        const sender = myDevice || ({ id: deviceId || 'sender', name: 'Device', type: 'mobile', os: 'unknown', approved: true, pairedAt: 0, lastSeen: 0 } as Device);
+        // Fallback to Supabase cloud storage
         const res = await supabaseService.shareFile(file, sender, receiverId);
         if (res.success && res.fileInfo) {
           setActiveTransfers((prev) =>
-            prev.map((t) => t.id === localTransfer.id ? { ...t, status: 'completed', progress: 100, downloadUrls: [res.fileInfo!.url] } : t)
+            prev.map((t) => t.transferId === transferId ? { ...t, status: 'completed', progress: 100, downloadUrls: [res.fileInfo!.url] } : t)
           );
           setTransferHistory((prev) => [{
-            id: localTransfer.id,
+            id: transferId,
             files: [{ name: file.name, size: file.size }],
             status: 'completed',
             createdAt: Date.now(),
           }, ...prev]);
         } else {
           setActiveTransfers((prev) =>
-            prev.map((t) => t.id === localTransfer.id ? { ...t, status: 'failed', error: res.error || 'Upload failed' } : t)
+            prev.map((t) => t.transferId === transferId ? { ...t, status: 'failed', error: res.error || 'Upload failed' } : t)
           );
         }
       }
@@ -1077,6 +1139,39 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setPairingStatus('idle');
   }, [myDevice, pairedDevice]);
 
+  const respondToTransferRequest = useCallback(async (approved: boolean) => {
+    const current = myDevRef.current;
+    if (!current || !incomingTransferRequest) return;
+
+    await supabaseService.respondTransfer(
+      current.id,
+      incomingTransferRequest.fromDevice.id,
+      incomingTransferRequest.transferId,
+      approved
+    );
+
+    if (approved) {
+      const incoming: ActiveTransfer = {
+        id: `inc-${incomingTransferRequest.transferId}`,
+        transferId: incomingTransferRequest.transferId,
+        files: [],
+        fileInfos: incomingTransferRequest.files,
+        receiverId: current.id,
+        status: 'approved',
+        progress: 0,
+        speed: 0,
+        eta: 0,
+        direction: 'receive',
+        senderName: incomingTransferRequest.fromDevice.name,
+        transferType: incomingTransferRequest.transferType,
+        textContent: incomingTransferRequest.textContent,
+      };
+      setActiveTransfers((prev) => [incoming, ...prev]);
+    }
+
+    setIncomingTransferRequest(null);
+  }, [incomingTransferRequest]);
+
   const sendText = useCallback(async (text: string, receiverId?: string) => {
     const current = myDevRef.current;
     if (!current || !text.trim()) return;
@@ -1128,6 +1223,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     connectToDevice,
     respondToConnectRequest,
     disconnectDevice,
+    incomingTransferRequest,
+    respondToTransferRequest,
     createRoom,
     joinRoomWithPin,
     startPairing,

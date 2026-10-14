@@ -102,3 +102,13 @@ export interface ActiveTransfer {
   transferType?: 'file' | 'text';
   textContent?: string;
 }
+
+export interface IncomingTransferRequest {
+  transferId: string;
+  fromDevice: Device;
+  toDeviceId: string;
+  files: FileInfo[];
+  totalSize: number;
+  transferType: 'file' | 'text';
+  textContent?: string;
+}
