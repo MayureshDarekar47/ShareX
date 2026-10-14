@@ -27,9 +27,11 @@ function SunIcon() {
 export default function Navbar() {
   const { isConnected, sessionToken, myDevice, theme, toggleTheme, isHost, hostPin, openNameSetup } = useApp();
 
+  // Shorten name for navbar display on small screens
+  const deviceName = myDevice?.name || 'Device';
   const statusText = sessionToken
     ? isConnected
-      ? `Connected as ${myDevice?.name || 'Device'}`
+      ? `Connected as ${deviceName}`
       : 'Reconnecting...'
     : 'Not paired';
 
@@ -45,7 +47,7 @@ export default function Navbar() {
           ShareX
         </a>
 
-        <div className="navbar-actions">
+        <div className="navbar-actions" style={{ overflow: 'hidden', minWidth: 0 }}>
           {isHost && hostPin && (
             <div
               style={{
@@ -59,7 +61,8 @@ export default function Navbar() {
                 fontSize: '0.85rem',
                 fontWeight: 600,
                 color: 'var(--primary, #818cf8)',
-                letterSpacing: '0.05em'
+                letterSpacing: '0.05em',
+                flexShrink: 0,
               }}
               title="Share this PIN with other devices"
             >
@@ -72,12 +75,22 @@ export default function Navbar() {
             className="nav-status"
             aria-live="polite"
             onClick={openNameSetup}
-            style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
-            title="Click to rename your device"
+            style={{
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              overflow: 'hidden',
+              maxWidth: '180px',
+              flexShrink: 1,
+            }}
+            title={`${statusText} — Click to rename`}
           >
-            <div className={`status-dot ${statusClass}`} aria-hidden="true" />
-            <span>{statusText}</span>
-            <span style={{ fontSize: '0.75rem', opacity: 0.8 }} title="Change name">✏️</span>
+            <div className={`status-dot ${statusClass}`} aria-hidden="true" style={{ flexShrink: 0 }} />
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+              {statusText}
+            </span>
+            <span style={{ fontSize: '0.75rem', opacity: 0.8, flexShrink: 0 }} title="Change name">✏️</span>
           </div>
 
           <button
@@ -85,6 +98,7 @@ export default function Navbar() {
             className="btn btn-ghost btn-icon"
             onClick={toggleTheme}
             aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+            style={{ flexShrink: 0 }}
           >
             {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
           </button>

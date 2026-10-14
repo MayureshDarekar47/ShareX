@@ -1146,9 +1146,46 @@ code, pre {
   .tabs { gap: 0.25rem; }
   .tab-btn { padding: 0.6rem 0.75rem; font-size: 0.82rem; }
   .drop-zone { padding: 1.75rem 1rem; }
-  .device-card { padding: 0.75rem; gap: 0.75rem; }
+  .device-card { padding: 0.75rem; gap: 0.75rem; flex-wrap: wrap; }
   .device-avatar { width: 38px; height: 38px; font-size: 1.1rem; }
   .btn-lg { padding: 0.75rem 1.25rem; font-size: 0.95rem; }
+
+  /* Device name: allow full display, no truncation on mobile */
+  .device-name {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    word-break: break-word;
+  }
+
+  /* Device card action buttons: wrap below info on mobile */
+  .device-card-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    width: 100%;
+    margin-top: 0.25rem;
+  }
+
+  .device-card-actions .btn {
+    flex: 1;
+    min-width: 80px;
+    justify-content: center;
+  }
+
+  /* Card padding on mobile */
+  .card-body { padding: 0.85rem; }
+  .card-header { padding: 0.85rem; }
+
+  /* Transfer card adjustments */
+  .transfer-header { flex-wrap: wrap; }
+  .transfer-status-badge { font-size: 0.68rem; }
+
+  /* Prevent any horizontal overflow */
+  .card, .device-card, .transfer-card {
+    overflow: hidden;
+    max-width: 100%;
+  }
 }
 
 /* ── Animations ── */

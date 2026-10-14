@@ -858,11 +858,13 @@ function DevicesPanel() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '0.5rem',
                     border: isPaired ? '1px solid #10b981' : undefined,
                     background: isPaired ? 'rgba(16, 185, 129, 0.06)' : undefined,
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: '1', minWidth: 0 }}>
                     <div className="device-avatar">{getDeviceEmoji(d.os)}</div>
                     <div className="device-info">
                       <div className="device-name" style={{ fontWeight: 600 }}>{d.name}</div>
@@ -872,7 +874,7 @@ function DevicesPanel() {
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <div className="device-card-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                     {isPaired ? (
                       <>
                         <span style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: 600 }}>
