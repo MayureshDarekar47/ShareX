@@ -584,9 +584,14 @@ function SendPanel() {
               tabIndex={0}
               onKeyDown={(e) => e.key === 'Enter' && fileInputRef.current?.click()}
             >
-              <span className="drop-icon">📂</span>
-              <div className="drop-title">Drop files here</div>
-              <div className="drop-subtitle">or click to select · Any file type (Photos, Videos, Docs)</div>
+              <div className="drop-icon-wrapper">
+                <span className="drop-icon">📂</span>
+              </div>
+              <div className="drop-title">
+                <span className="drop-title-desktop">Drop files here or click to browse</span>
+                <span className="drop-title-mobile">Tap to select files</span>
+              </div>
+              <div className="drop-subtitle">Photos, Videos, Documents, Music, or any file</div>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -842,7 +847,7 @@ function DevicesPanel() {
                 Looking for nearby devices...
               </span>
               <p className="empty-subtitle" style={{ fontSize: '0.85rem', color: 'var(--text-muted, #94a3b8)', maxWidth: 420, margin: '0.5rem auto 0' }}>
-                Open <strong>sharex-mayur.vercel.app</strong> on your other phone, tablet, or laptop on the <strong>same Wi-Fi</strong>. They will appear here automatically!
+                Open <strong>{window.location.host}</strong> on your other phone, tablet, or laptop on the <strong>same Wi-Fi</strong>. They will appear here automatically!
               </p>
             </div>
           ) : (
@@ -1062,38 +1067,39 @@ function ConnectDeviceCard() {
         <div
           style={{
             width: '100%',
-            padding: '0.65rem 0.85rem',
-            background: 'rgba(99, 102, 241, 0.1)',
-            border: '1px solid rgba(99, 102, 241, 0.25)',
-            borderRadius: '8px',
+            padding: '0.75rem 1rem',
+            background: 'rgba(99, 102, 241, 0.08)',
+            border: '1px solid rgba(99, 102, 241, 0.22)',
+            borderRadius: 'var(--radius-md)',
             fontSize: '0.82rem',
-            lineHeight: 1.45,
+            lineHeight: 1.5,
             color: 'var(--text-secondary)',
           }}
         >
-          📍 <strong>Notice:</strong> Same Wi-Fi wale devices upar radar me automatically online dikhte hain. Ye <strong>QR Code &amp; 6-Digit PIN</strong> sirf un <strong>Longer Distance</strong> devices ke liye hai jo dur hain ya alag network par hain!
+          📍 <strong>Wi-Fi Devices:</strong> Same Wi-Fi wale devices upar auto-radar me dikhte hain. Ye <strong>QR Code &amp; 6-Digit PIN</strong> sirf un <strong>Longer Distance</strong> devices ke liye hai jo alag network ya mobile data par hain.
         </div>
 
         {/* Instant QR Code */}
         <div style={{ textAlign: 'center' }}>
           <div
             style={{
-              padding: '0.5rem',
-              background: '#fff',
-              borderRadius: '12px',
-              boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
+              padding: '0.65rem',
+              background: '#ffffff',
+              borderRadius: 'var(--radius-md)',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
               display: 'inline-block',
               margin: '0 auto',
+              border: '2px solid rgba(255, 255, 255, 0.2)',
             }}
           >
             <img
               src={qrImgUrl}
               alt="Scan QR to open ShareX"
-              style={{ width: 130, height: 130, display: 'block', borderRadius: '6px' }}
+              style={{ width: 130, height: 130, display: 'block', borderRadius: '4px' }}
             />
           </div>
-          <p className="fs-xs text-muted" style={{ margin: '0.5rem 0 0', maxWidth: 280 }}>
-            Scan with longer distance device camera or open <strong>{window.location.host}</strong>
+          <p className="fs-xs text-muted" style={{ margin: '0.6rem 0 0', maxWidth: 280 }}>
+            Scan with phone camera or open <strong style={{ color: 'var(--text-accent)' }}>{window.location.host}</strong>
           </p>
         </div>
 
@@ -1102,35 +1108,45 @@ function ConnectDeviceCard() {
           style={{
             width: '100%',
             background: 'var(--bg-elevated)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: '10px',
-            padding: '0.85rem',
+            border: '1px solid var(--border-default)',
+            borderRadius: 'var(--radius-md)',
+            padding: '1rem',
             textAlign: 'center',
           }}
         >
-          <div className="fs-xs text-muted" style={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Your Device PIN (For Longer Distance)
+          <div className="fs-xs text-muted" style={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            Device Connect PIN
           </div>
-          <div style={{ fontSize: '1.4rem', fontWeight: 800, letterSpacing: '0.2em', color: 'var(--primary, #818cf8)', margin: '0.2rem 0' }}>
+          <div
+            style={{
+              fontSize: '1.6rem',
+              fontWeight: 800,
+              letterSpacing: '0.22em',
+              color: 'var(--accent-primary)',
+              margin: '0.3rem 0',
+              fontFamily: 'var(--font-mono)',
+            }}
+          >
             {displayPin}
           </div>
           <div className="fs-xs text-muted">
-            Share this PIN with longer distance devices to connect across networks
+            Share this PIN to pair directly across different networks
           </div>
 
-          <form onSubmit={handleConnectByPin} style={{ display: 'flex', gap: '0.4rem', marginTop: '0.75rem' }}>
+          <form onSubmit={handleConnectByPin} style={{ display: 'flex', gap: '0.5rem', marginTop: '0.85rem' }}>
             <input
               className="input"
               value={remotePin}
               onChange={(e) => setRemotePin(e.target.value)}
               placeholder="Enter 6-digit PIN"
               maxLength={6}
-              style={{ padding: '0.4rem 0.6rem', fontSize: '0.85rem', textAlign: 'center', fontFamily: 'var(--font-mono)' }}
+              style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem', textAlign: 'center', fontFamily: 'var(--font-mono)', letterSpacing: '0.1em' }}
             />
             <button
               type="submit"
               className="btn btn-primary btn-sm"
               disabled={remotePin.trim().length !== 6 || connecting}
+              style={{ padding: '0.5rem 1rem', fontWeight: 600 }}
             >
               {connecting ? '...' : 'Connect'}
             </button>
@@ -1143,7 +1159,7 @@ function ConnectDeviceCard() {
 
 export default function DashboardPage() {
   const {
-    hostInfo, qrCode, qrUrl, myDevice, isHost, hostPin, pendingDevices, approveDeviceRequest,
+    devices, hostInfo, qrCode, qrUrl, myDevice, isHost, hostPin, pendingDevices, approveDeviceRequest,
     incomingConnectRequest, respondToConnectRequest, pairedDevice, disconnectDevice, openNameSetup,
     incomingTransferRequest, respondToTransferRequest
   } = useApp();
@@ -1167,24 +1183,24 @@ export default function DashboardPage() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '0.65rem 1rem',
-          background: 'var(--bg-card)',
-          borderRadius: '10px',
+          padding: '0.75rem 1.25rem',
+          background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(139, 92, 246, 0.06) 100%)',
+          borderRadius: 'var(--radius-lg)',
           border: '1px solid var(--border-default)',
-          marginBottom: '1rem',
+          marginBottom: '1.25rem',
           flexWrap: 'wrap',
-          gap: '0.5rem',
+          gap: '0.75rem',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-          <div className="device-avatar" style={{ width: 36, height: 36, fontSize: '1.25rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <div className="device-avatar" style={{ width: 38, height: 38, fontSize: '1.3rem', borderRadius: 'var(--radius-md)' }}>
             {getDeviceEmoji(myDevice?.os || 'windows')}
           </div>
           <div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Your Device
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>
+              Your Active Device
             </div>
-            <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--text-primary)' }}>
+            <div style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--text-primary)' }}>
               {myDevice?.name || 'My Device'}
             </div>
           </div>
@@ -1193,7 +1209,7 @@ export default function DashboardPage() {
           className="btn btn-ghost btn-sm"
           onClick={openNameSetup}
           id="change-device-name-btn"
-          style={{ border: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+          style={{ border: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', gap: '0.35rem', background: 'var(--bg-elevated)' }}
         >
           <span>✏️</span> Change Name
         </button>
@@ -1424,15 +1440,40 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className="tabs">
-        <button className={`tab-btn ${activeTab === 'send' ? 'active' : ''}`} onClick={() => setActiveTab('send')} id="tab-send">
-          📤 Send / Receive
+      <div className="tabs" role="tablist">
+        <button
+          className={`tab-btn ${activeTab === 'send' ? 'active' : ''}`}
+          onClick={() => setActiveTab('send')}
+          id="tab-send"
+          role="tab"
+          aria-selected={activeTab === 'send'}
+        >
+          <span>📤</span>
+          <span className="tab-label-desktop">Send / Receive</span>
+          <span className="tab-label-mobile">Send</span>
         </button>
-        <button className={`tab-btn ${activeTab === 'devices' ? 'active' : ''}`} onClick={() => setActiveTab('devices')} id="tab-devices">
-          🖥 Devices
+        <button
+          className={`tab-btn ${activeTab === 'devices' ? 'active' : ''}`}
+          onClick={() => setActiveTab('devices')}
+          id="tab-devices"
+          role="tab"
+          aria-selected={activeTab === 'devices'}
+        >
+          <span>🖥</span>
+          <span>Devices</span>
+          {devices.filter((d) => d.id !== myDevice?.id).length > 0 && (
+            <span className="tab-badge">{devices.filter((d) => d.id !== myDevice?.id).length}</span>
+          )}
         </button>
-        <button className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')} id="tab-history">
-          📋 History
+        <button
+          className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`}
+          onClick={() => setActiveTab('history')}
+          id="tab-history"
+          role="tab"
+          aria-selected={activeTab === 'history'}
+        >
+          <span>📋</span>
+          <span>History</span>
         </button>
       </div>
 

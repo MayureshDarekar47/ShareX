@@ -18,7 +18,7 @@ function getSuggestedName(): string {
 }
 
 export default function NameSetupPage() {
-  const { myDevice, confirmDeviceName, isNameConfirmed } = useApp();
+  const { myDevice, confirmDeviceName } = useApp();
   const [name, setName] = useState<string>(() => {
     return (
       myDevice?.name ||
@@ -35,99 +35,68 @@ export default function NameSetupPage() {
   };
 
   const suggestions = [
-    '💻 Laptop',
-    '📱 Mobile Phone',
-    '🖥 Desktop PC',
-    '🍎 iPhone',
-    '🤖 Vivo / Android',
+    { label: 'Laptop', icon: '💻' },
+    { label: 'Mobile Phone', icon: '📱' },
+    { label: 'Desktop PC', icon: '🖥' },
+    { label: 'iPhone', icon: '🍎' },
+    { label: 'Android Phone', icon: '🤖' },
   ];
 
   return (
-    <div className="pairing-container fade-in" style={{ maxWidth: 460, margin: '2rem auto', padding: '0 1rem' }}>
-      <div className="pairing-card" style={{ border: '2px solid var(--accent-primary)', boxShadow: '0 10px 40px rgba(99, 102, 241, 0.25)' }}>
-        <div className="pairing-header" style={{ textAlign: 'center' }}>
-          <div
-            style={{
-              width: 64,
-              height: 64,
-              borderRadius: '50%',
-              background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '2rem',
-              margin: '0 auto 1rem',
-              boxShadow: '0 4px 20px rgba(99, 102, 241, 0.4)',
-            }}
-          >
-            📡
+    <div className="setup-container fade-in">
+      <div className="setup-card">
+        <div className="setup-header">
+          <div className="setup-icon-bubble">
+            <span className="setup-emoji">📡</span>
           </div>
-          <h1 className="pairing-title" style={{ fontSize: '1.5rem', fontWeight: 800 }}>
-            Choose Your Device Name
-          </h1>
-          <p className="pairing-subtitle" style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
-            Enter a recognizable name so nearby phones & laptops know who is sending or receiving files.
+          <h1 className="setup-title">Identify Your Device</h1>
+          <p className="setup-subtitle">
+            Enter a recognizable name so nearby phones &amp; laptops can discover you on the local network.
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', marginTop: '1.5rem' }}>
+        <form onSubmit={handleSubmit} className="setup-form">
           <div className="input-group">
-            <label className="label" htmlFor="setup-device-name" style={{ fontWeight: 600 }}>
-              Device Name
+            <label className="label" htmlFor="setup-device-name">
+              Device Display Name
             </label>
             <input
               id="setup-device-name"
-              className="input"
+              className="input setup-input"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Mayuresh Laptop, Vivo Y50"
+              placeholder="e.g. My Laptop, Vivo Phone"
               maxLength={40}
               autoFocus
-              style={{
-                fontSize: '1.05rem',
-                padding: '0.85rem 1rem',
-                border: '2px solid var(--border-default)',
-                borderRadius: '10px',
-              }}
             />
           </div>
 
-          <div>
-            <span className="fs-xs text-muted" style={{ display: 'block', marginBottom: '0.4rem', fontWeight: 600 }}>
-              Quick Suggestions:
-            </span>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+          <div className="presets-section">
+            <span className="presets-label">Quick Suggestions</span>
+            <div className="presets-grid">
               {suggestions.map((sug) => (
                 <button
-                  key={sug}
+                  key={sug.label}
                   type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => setName(sug.replace(/^[^\w\s]+\s*/, ''))}
-                  style={{
-                    fontSize: '0.78rem',
-                    padding: '0.3rem 0.6rem',
-                    background: 'var(--bg-elevated)',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '20px',
-                  }}
+                  className="preset-chip"
+                  onClick={() => setName(sug.label)}
                 >
-                  {sug}
+                  <span className="preset-emoji">{sug.icon}</span>
+                  <span>{sug.label}</span>
                 </button>
               ))}
             </div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
-            <button
-              type="submit"
-              className="btn btn-primary btn-full btn-lg"
-              id="start-connecting-btn"
-              disabled={!name.trim()}
-              style={{ fontWeight: 700, fontSize: '1.05rem' }}
-            >
-              🚀 Continue & Discover Devices
-            </button>
-          </div>
+          <button
+            type="submit"
+            className="btn btn-primary btn-full setup-submit-btn"
+            id="start-connecting-btn"
+            disabled={!name.trim()}
+          >
+            <span>Continue to ShareX</span>
+            <span aria-hidden="true">→</span>
+          </button>
         </form>
       </div>
     </div>

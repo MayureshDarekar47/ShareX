@@ -78,7 +78,7 @@ export function useApp() {
 }
 
 function getStoredTheme(): 'dark' | 'light' {
-  return (localStorage.getItem('sharex_theme') as any) || 'dark';
+  return (localStorage.getItem('sharex_theme') as any) || 'light';
 }
 
 function computeChecksum(file: File): Promise<string> {
